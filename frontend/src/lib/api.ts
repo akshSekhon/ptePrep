@@ -36,6 +36,15 @@ async function request<T>(method: string, path: string, body?: JsonBody): Promis
   return (await res.json()) as T;
 }
 
+async function upload<T>(path: string, body: FormData): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: "POST", body });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => null);
+    throw new ApiError(res.status, errBody);
+  }
+  return (await res.json()) as T;
+}
+
 // The response type is yours to declare: nothing infers across the Python boundary, so a
 // TS interface here mirrors the endpoint's Pydantic model by hand — keep the two in sync.
 export const apiGet = <T>(path: string) => request<T>("GET", path);
@@ -44,3 +53,4 @@ export const apiPut = <T>(path: string, body?: JsonBody) => request<T>("PUT", pa
 export const apiPatch = <T>(path: string, body?: JsonBody) =>
   request<T>("PATCH", path, body ?? null);
 export const apiDelete = <T>(path: string) => request<T>("DELETE", path);
+export const apiUpload = <T>(path: string, body: FormData) => upload<T>(path, body);

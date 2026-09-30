@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 INDEXES: dict[str, list[IndexModel]] = {
     "status_checks": [IndexModel([("timestamp", DESCENDING)], name="timestamp_desc")],
     "attempts": [IndexModel([("created_at", DESCENDING)], name="created_at_desc")],
+    "mocks": [IndexModel([("created_at", DESCENDING)], name="created_at_desc")],
+    "mock_results": [IndexModel([("created_at", DESCENDING)], name="created_at_desc")],
 }
 
 

@@ -6,17 +6,22 @@ from pydantic import BaseModel, Field
 
 
 Skill = Literal["Speaking", "Writing", "Reading", "Listening"]
+Difficulty = Literal["Easy", "Medium", "Hard"]
+ResponseType = Literal["text", "choice", "audio"]
 
 
 class PteTask(BaseModel):
     id: str
     title: str
     skill: Skill
+    section: str
     task_type: str
-    difficulty: Literal["Easy", "Medium", "Hard"]
+    difficulty: Difficulty
     duration_seconds: int
     prompt: str
     instructions: str
+    response_type: ResponseType = "text"
+    options: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
 
 
@@ -29,6 +34,9 @@ class TraitScore(BaseModel):
 class AttemptCreate(BaseModel):
     task_id: str
     answer_text: str = Field(min_length=1, max_length=12000)
+    difficulty: Difficulty = "Medium"
+    source: Literal["text", "audio"] = "text"
+    audio_duration_seconds: int | None = None
 
 
 class Attempt(BaseModel):
@@ -36,13 +44,17 @@ class Attempt(BaseModel):
     task_id: str
     task_title: str
     skill: Skill
+    difficulty: Difficulty = "Medium"
     score: int
     traits: list[TraitScore]
     feedback: list[str]
     answer_preview: str
     word_count: int
+    source: Literal["text", "audio"] = "text"
+    audio_duration_seconds: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    is_demo: bool = True
+    is_demo: bool = False
+    ai_feedback: bool = False
 
 
 class DashboardSummary(BaseModel):
@@ -54,3 +66,75 @@ class DashboardSummary(BaseModel):
     skill_scores: dict[str, int]
     weak_area: str
     recent_attempts: list[Attempt]
+
+
+class MockCreate(BaseModel):
+    level: Difficulty = "Medium"
+
+
+class MockQuestion(PteTask):
+    order: int
+    correct_answer: str | None = None
+
+
+class MockTest(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    title: str
+    level: Difficulty
+    questions: list[MockQuestion]
+    total_time_seconds: int
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_by_ai: bool = False
+
+
+class MockAnswer(BaseModel):
+    question_id: str
+    answer: str = ""
+
+
+class MockSubmit(BaseModel):
+    answers: list[MockAnswer]
+
+
+class MockResult(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    mock_id: str
+    title: str
+    level: Difficulty
+    overall_score: int
+    section_scores: dict[str, int]
+    completed_count: int
+    total_count: int
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class StudyPlanItem(BaseModel):
+    skill: Skill
+    title: str
+    detail: str
+    task_count: int
+    priority: Literal["High", "Medium", "Low"]
+
+
+class StudyPlan(BaseModel):
+    title: str
+    summary: str
+    based_on_attempts: int
+    items: list[StudyPlanItem]
+
+
+class PricingPlan(BaseModel):
+    id: str
+    name: str
+    scope: str
+    price: str
+    description: str
+    features: list[str]
+    availability: Literal["included", "catalog_only"]
+
+
+class AudioTranscript(BaseModel):
+    transcript: str
+    language: str
+    duration_seconds: int | None = None
+    provider: str
