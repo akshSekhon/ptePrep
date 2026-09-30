@@ -1,0 +1,116 @@
+{
+  "project_name": "PTE Exam Prep Workspace",
+  "archetype": "The Performance Pro & Calm Studio",
+  "app_type": "saas_app",
+  "primary_theme": "light_and_dark_supported_calm_teal_slate",
+  "brand_colors": {
+    "slate_base": "#0F172A",
+    "deep_slate_surface": "#1E293B",
+    "ocean_blue_primary": "#0284C7",
+    "teal_primary_accent": "#0D9488",
+    "teal_light_tint": "#CCFBF1",
+    "sky_active": "#38BDF8",
+    "amber_warning": "#D97706",
+    "emerald_success": "#059669",
+    "rose_error": "#E11D48",
+    "card_background_light": "#FFFFFF",
+    "app_background_light": "#F8FAFC",
+    "text_primary_light": "#0F172A",
+    "text_secondary_light": "#475569"
+  },
+  "typography": {
+    "heading_font": "Plus Jakarta Sans, sans-serif",
+    "body_font": "IBM Plex Sans, sans-serif",
+    "mono_font": "JetBrains Mono, monospace",
+    "hierarchy": {
+      "h1": "text-3xl md:text-5xl font-extrabold tracking-tight",
+      "h2": "text-2xl md:text-3xl font-bold tracking-tight",
+      "h3": "text-xl md:text-2xl font-semibold",
+      "h4": "text-lg font-semibold",
+      "body_lg": "text-base font-normal leading-relaxed",
+      "body_sm": "text-sm font-normal leading-normal",
+      "label_mono": "text-xs font-mono uppercase tracking-wider"
+    }
+  },
+  "layout_and_spacing": {
+    "container_padding": "px-4 sm:px-6 lg:px-8 py-6",
+    "card_padding": "p-6 sm:p-8",
+    "grid_bento": "grid grid-cols-1 md:grid-cols-12 gap-6",
+    "workspace_split": "grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-[calc(100vh-5rem)]",
+    "border_radius": "rounded-xl"
+  },
+  "images": [
+    {
+      "category": "hero_student",
+      "url": "https://images.unsplash.com/photo-1758685848226-eedca8f6bce7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzN8MHwxfHNlYXJjaHw0fHxzdHVkZW50JTIwc3R1ZHlpbmclMjBsYXB0b3AlMjBmb2N1cyUyMGV4YW0lMjBwcmVwJTIwZGVza3xlbnwwfHx8fDE3OTA3NjE2NzF8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Student in focused exam preparation workspace"
+    },
+    {
+      "category": "speaking_prep",
+      "url": "https://images.unsplash.com/photo-1758876202726-bdb6c1272152?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzN8MHwxfHNlYXJjaHwxfHxoZWFkc2V0JTIwd29tYW4lMjBsYXB0b3AlMjB2aWRlbyUyMGNhbGwlMjBvbmxpbmUlMjBjbGFzc3xlbnwwfHx8fDE3OTA3NjE2Nzh8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Learner with headset practicing speaking test module"
+    }
+  ],
+  "components_and_structure": {
+    "file_extension": ".js",
+    "pages": [
+      {
+        "file": "src/pages/Dashboard.js",
+        "description": "Learner Progress Overview with PTE Score Target Gauge (10-90 scale), skill breakdowns (Speaking, Writing, Reading, Listening), skill projection line chart, weak area diagnostic alerts, and quick launch practice section."
+      },
+      {
+        "file": "src/pages/TaskSelection.js",
+        "description": "Categorized PTE task type explorer (22 official question types grouped under Speaking, Writing, Reading, Listening) with difficulty filters, completion status, and quick practice launch buttons."
+      },
+      {
+        "file": "src/pages/PracticeWorkspace.js",
+        "description": "Interactive PTE exam simulator with prompt viewer, real-time timer countdown, audio recorder waveform/mic controls (Speaking), rich text box with word counter & spell check (Writing), drag-and-drop / select menus (Reading), and audio playback engine (Listening)."
+      },
+      {
+        "file": "src/pages/ScoreFeedback.js",
+        "description": "AI Evaluation report page presenting PTE Overall Score (10-90), sub-skill radar chart (Oral Fluency, Pronunciation, Grammar, Vocabulary, Discourse), annotated error feedback, AI suggestions, and model high-score responses."
+      },
+      {
+        "file": "src/pages/TaskHistory.js",
+        "description": "Filterable history table logging all completed practice sessions, previous score trends, audio recording playback replay, and review links."
+      }
+    ],
+    "shared_components": [
+      {
+        "file": "src/components/HeaderNav.js",
+        "description": "Header navigation with logo, active section links, PTE goal badge (e.g. Target 79+), streak counter badge, and theme toggle."
+      },
+      {
+        "file": "src/components/ScoreGauge.js",
+        "description": "Circular / Arc PTE score indicator (10-90) with target reference marker and sub-score indicators."
+      },
+      {
+        "file": "src/components/AudioRecorderWaveform.js",
+        "description": "Simulated live audio input visualizer with mic sensitivity status, recording timer, stop/submit buttons, and playback wave."
+      },
+      {
+        "file": "src/components/EssayEditor.js",
+        "description": "Focused text area editor displaying real-time word count, paragraph counter, recommended length gauge, and backspace restriction info toggle."
+      },
+      {
+        "file": "src/components/SkillRadarChart.js",
+        "description": "Interactive radar visualization using Recharts for enabling skills (Fluency, Pronunciation, Grammar, Vocabulary, Spelling)."
+      }
+    ]
+  },
+  "key_user_flows": {
+    "task_execution": "Dashboard or TaskSelection -> Select Task (e.g., 'Describe Image' or 'Write Essay') -> Exam Practice Workspace -> Mic Record / Type Answer -> Click Submit Answer -> Simulated AI Evaluation Processing -> Comprehensive Score & Feedback View -> Save to Task History",
+    "progress_tracking": "Dashboard -> View Target vs Current Score -> Inspect Weak Skill Breakdown -> Click 'Practice Weakest Task' -> Direct entry into tailored practice"
+  },
+  "testing_and_accessibility": {
+    "data_testid_requirement": "All interactive elements (buttons, inputs, select items, tab triggers, score cards, playback controls, navigation items) MUST include explicit data-testid attributes in kebab-case (e.g., data-testid='submit-essay-button', data-testid='task-card-describe-image', data-testid='pte-overall-score-gauge').",
+    "wcag_standards": "Text contrast ratio > 4.5:1, readable focus rings, keyboard accessible task selection, non-transparent overlay dropdowns."
+  },
+  "instructions_to_main_agent": [
+    "Build a complete PTE Preparation SaaS application using .js file components.",
+    "Implement realistic demo AI scoring engine for Speaking, Writing, Reading, and Listening so users can practice without external API keys.",
+    "Ensure the calm slate-teal palette (#0F172A, #0284C7, #0D9488) creates a high-focus exam environment.",
+    "Ensure every page and component includes proper data-testid attributes as specified.",
+    "Use Shadcn UI components where available and keep spacing generous (p-6, p-8)."
+  ]
+}
