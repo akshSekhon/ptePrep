@@ -25,6 +25,7 @@ INDEXES: dict[str, list[IndexModel]] = {
     "module_tests": [IndexModel([("skill", ASCENDING), ("level", ASCENDING), ("created_at", DESCENDING)], name="module_test_lookup")],
     "module_test_results": [IndexModel([("created_at", DESCENDING)], name="module_result_created_at_desc")],
     "test_sources": [IndexModel([("created_at", DESCENDING)], name="test_source_created_at_desc")],
+    "generated_audio": [IndexModel([("test_kind", ASCENDING), ("test_id", ASCENDING), ("question_id", ASCENDING), ("voice", ASCENDING)], name="generated_audio_lookup", unique=True)],
 }
 
 

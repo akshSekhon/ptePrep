@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Mic2, Square, Volume2 } from "lucide-react";
 import { apiUpload } from "@/lib/api";
 import type { AudioTranscript } from "@/lib/pte";
@@ -13,35 +13,55 @@ export default function AudioRecorder({ onTranscript, onError, onPermissionChang
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
+  const streamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(true);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [permissionDenied, setPermissionDenied] = useState(false);
 
+  useEffect(() => () => {
+    mountedRef.current = false;
+    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+
   const startRecording = async () => {
+    let stream: MediaStream | null = null;
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone recording is not supported in this browser");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
       setPermissionDenied(false);
       onPermissionChange?.(true);
-      const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
-      const recorder = new MediaRecorder(stream, { mimeType: mime });
+    } catch {
+      setPermissionDenied(true);
+      onPermissionChange?.(false);
+      onError("Microphone permission is required for speaking practice. Enable it in your browser, then try again.");
+      return;
+    }
+    if (!stream) return;
+    try {
+      const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       chunksRef.current = [];
       startedAtRef.current = Date.now();
       recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
       recorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        if (!mountedRef.current) return;
         const duration = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000));
         setElapsed(duration);
         setTranscribing(true);
         try {
-          const extension = mime.includes("mp4") ? "m4a" : "webm";
+          const extension = mime?.includes("mp4") ? "m4a" : "webm";
           const formData = new FormData();
-          formData.append("file", new Blob(chunksRef.current, { type: mime }), `pte-response.${extension}`);
+          formData.append("file", new Blob(chunksRef.current, { type: mime ?? "audio/webm" }), `pte-response.${extension}`);
           const result = await apiUpload<AudioTranscript>("/pte/transcribe", formData);
           onTranscript(result.transcript, duration);
         } catch {
-          onError("Transcription could not be completed. You can still type your response below.");
+          onError("Transcription could not be completed. Record again to submit a speaking response.");
         } finally {
           setTranscribing(false);
         }
@@ -51,9 +71,8 @@ export default function AudioRecorder({ onTranscript, onError, onPermissionChang
       setElapsed(0);
       setRecording(true);
     } catch {
-      setPermissionDenied(true);
-      onPermissionChange?.(false);
-      onError("Microphone access is required for speaking practice. Enable it in your browser, then try again.");
+      stream.getTracks().forEach((track) => track.stop());
+      onError("Your microphone is allowed, but this browser could not start a recording. Try Chrome, Edge, or Safari with no other app using the microphone.");
     }
   };
 

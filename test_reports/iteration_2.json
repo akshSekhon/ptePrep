@@ -1,0 +1,74 @@
+{
+  "iteration": 2,
+  "summary": "Retest of 7 acceptance criteria (matches briefing matrix). Backend suite: 3/3 passed. Browser checks: 6/6 passed (0 failed, 0 blocked, 0 test_error) after updating 3 checks to follow app flow changes (new device-check gate before Speaking/Listening runners, new mock ready/Start screen) and adding 1 new check for the pre-test device-check criterion.",
+  "passed": 9,
+  "failed": 0,
+  "bugs": [],
+  "action_items": [],
+  "retest_needed": false,
+  "checks": [
+    {
+      "criterion": "Practice task card opens a saved test library rather than one standalone question",
+      "name": "practice-task-opens-test-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran unchanged; Read Aloud 'Practice now' opens task-test-library with generator, import, guided-builder, and saved-tests sections."
+    },
+    {
+      "criterion": "Generated task tests persist",
+      "name": "generated-task-test-persists-in-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Updated to complete the new device-check gate (mocked getUserMedia/MediaRecorder/AudioContext) before the runner appears. Generated a 10-question Read Aloud test, exited, saved-task-tests count increased and remained after leaving/re-entering the library."
+    },
+    {
+      "criterion": "Generated task tests persist",
+      "name": "test_generated_read_aloud_test_persists_in_library",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "POST /api/pte/module-tests (Speaking/Read Aloud/Easy/10) -> 200 with 10 questions; GET /api/pte/module-tests?... -> 200 includes created id; GET /api/pte/module-tests/{id} -> 200."
+    },
+    {
+      "criterion": "Full mock navigation is reliable and exposes generated mocks",
+      "name": "full-mock-navigation-shows-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran unchanged; Full mock landing renders data-testid=mock-library with generate-mock-button AND a saved-mock-list of stored mocks. This was failing in iteration_1 (bug fixed by main agent) - now passes."
+    },
+    {
+      "criterion": "Test timing has explicit controls",
+      "name": "mock-timing-has-start-pause-controls",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Updated for new flow: generating a mock now lands on mock-ready-screen (Start mock button, 'timer will not start until you choose Start') before mock-runner-title appears. After Start, mock-pause-button/mock-resume-button toggle correctly and mock-paused-notice shows while countdown text is frozen during pause. This was failing in iteration_1 (bug fixed by main agent) - now passes."
+    },
+    {
+      "criterion": "Microphone setup warning is accurate",
+      "name": "microphone-setup-failure-not-permission",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Updated to pass through the new device-check gate first (1st MediaRecorder construction succeeds), then the in-question AudioRecorder's 2nd MediaRecorder construction throws. UI shows 'could not start a recording' and does not render microphone-permission-help (permission-denied banner)."
+    },
+    {
+      "criterion": "Pre-test device check supports recording playback",
+      "name": "device-check-gates-speaking-test",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "New check: generating a Speaking (Read Aloud) test shows device-check-page before module-test-runner; continue button is disabled until both a recorded sample (device-check-recording-playback audio element present) and the sound check are completed; then continue unlocks and opens module-test-runner."
+    },
+    {
+      "criterion": "Listening audio uses cached HD audio",
+      "name": "test_listening_module_test_audio_returns_mpeg",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "GET /api/pte/listening-audio/module/{test_id}/{question_id} -> 200, content-type audio/mpeg on first (generated) and second (cached) calls."
+    },
+    {
+      "criterion": "Dashboard progress is data-driven (carried over from iteration_1, not in current briefing matrix but still exercised as it shares backend suite)",
+      "name": "test_dashboard_reflects_new_attempt",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "GET /api/pte/dashboard before/after POST /api/pte/attempts: completed_tasks incremented by exactly 1 and skill_scores[skill] > 0."
+    }
+  ]
+}

@@ -1,7 +1,10 @@
 import asyncio
+import csv
+import json
 import os
 import tempfile
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -10,6 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from emergentintegrations.llm.openai.speech_to_text import OpenAISpeechToText
+from emergentintegrations.llm.openai.text_to_speech import OpenAITextToSpeech
 from lib.ai import generate_grounded_topic, generate_mock_prompts, review_answer
 from lib.db import db
 from bson.binary import Binary
@@ -34,6 +38,8 @@ from models.pte import (
     StudyPlan,
     StudyPlanItem,
     TestSource,
+    TestImportCreate,
+    TestImportQuestion,
     TraitScore,
     VisualData,
 )
@@ -151,10 +157,25 @@ async def get_task(task_id: str, level: str = "Medium") -> PteTask:
 async def get_dashboard() -> DashboardSummary:
     docs = await db.attempts.find().sort("created_at", -1).to_list(100)
     attempts = [Attempt(**_normalise_datetime(doc)) for doc in docs]
-    scores = {"Speaking": 72, "Writing": 67, "Reading": 75, "Listening": 64}
+    module_results = await db.module_test_results.find().sort("created_at", -1).to_list(100)
+    scores = {"Speaking": 0, "Writing": 0, "Reading": 0, "Listening": 0}
     for attempt in attempts:
-        scores[attempt.skill] = attempt.score
-    return DashboardSummary(overall_score=round(sum(scores.values()) / 4), target_score=79, streak_days=12, completed_tasks=len(attempts), today_tasks=min(20, len(attempts) + 4), skill_scores=scores, weak_area=min(scores, key=scores.get), recent_attempts=attempts[:5])
+        if not scores[attempt.skill]:
+            scores[attempt.skill] = attempt.score
+    for result in module_results:
+        skill = result.get("skill")
+        if skill in scores and not scores[skill]:
+            scores[skill] = int(result.get("estimated_score", 0))
+    today = datetime.now(timezone.utc).date()
+    practice_days = {attempt.created_at.astimezone(timezone.utc).date() for attempt in attempts}
+    streak = 0
+    cursor = today
+    while cursor in practice_days:
+        streak += 1
+        cursor = cursor.fromordinal(cursor.toordinal() - 1)
+    today_completed = sum(1 for attempt in attempts if attempt.created_at.astimezone(timezone.utc).date() == today)
+    observed_scores = [score for score in scores.values() if score]
+    return DashboardSummary(overall_score=round(sum(observed_scores) / len(observed_scores)) if observed_scores else 0, target_score=79, streak_days=streak, completed_tasks=len(attempts) + len(module_results), today_tasks=max(0, 4 - today_completed), skill_scores=scores, weak_area=min(scores, key=scores.get), recent_attempts=attempts[:5])
 
 
 @router.post("/attempts", response_model=Attempt)
@@ -258,6 +279,10 @@ def _module_question(base: dict[str, Any], level: str, topic: str, context: str,
     return task, answer_key, explanation
 
 
+def _listening_audio_url(test_kind: str, test_id: str, question_id: str, voice: str) -> str:
+    return f"/api/pte/listening-audio/{test_kind}/{test_id}/{question_id}?voice={voice}"
+
+
 def _is_correct(question: dict[str, Any], answer: str) -> bool:
     submitted = answer.lower().strip()
     if not submitted:
@@ -327,10 +352,54 @@ async def get_test_source_file(source_id: str) -> Response:
     return Response(content=bytes(doc["content"]), media_type=doc["mime_type"], headers={"Content-Disposition": f'inline; filename="{doc.get("original_name", "source")}"'})
 
 
+async def _listen_audio(test_kind: str, test_id: str, question_id: str, voice: str) -> Response:
+    collection = db.module_tests if test_kind == "module" else db.mocks
+    doc = await collection.find_one({"id": test_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Saved test not found")
+    question = next((item for item in doc.get("questions", []) if item.get("id") == question_id), None)
+    if not question or not question.get("listening_script"):
+        raise HTTPException(status_code=404, detail="Listening passage not found")
+    selected_voice = voice if voice in {"australian", "british"} else doc.get("voice", "australian")
+    cached = await db.generated_audio.find_one({"test_kind": test_kind, "test_id": test_id, "question_id": question_id, "voice": selected_voice})
+    if cached:
+        return Response(content=bytes(cached["audio"]), media_type="audio/mpeg", headers={"Cache-Control": "public, max-age=86400"})
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(status_code=503, detail="Natural listening audio is not configured")
+    try:
+        provider_voice = "nova" if selected_voice == "australian" else "sage"
+        audio = await OpenAITextToSpeech(api_key=key).generate_speech(text=str(question["listening_script"]), model="tts-1-hd", voice=provider_voice, speed=0.94, response_format="mp3")
+        await db.generated_audio.insert_one({"test_kind": test_kind, "test_id": test_id, "question_id": question_id, "voice": selected_voice, "audio": Binary(audio), "created_at": datetime.now(timezone.utc)})
+        return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "public, max-age=86400"})
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Natural listening audio unavailable: {exc}") from exc
+
+
+@router.get("/listening-audio/{test_kind}/{test_id}/{question_id}")
+async def get_listening_audio(test_kind: str, test_id: str, question_id: str, voice: str = "australian") -> Response:
+    if test_kind not in {"module", "mock"}:
+        raise HTTPException(status_code=404, detail="Saved test not found")
+    return await _listen_audio(test_kind, test_id, question_id, voice)
+
+
+@router.get("/module-tests", response_model=list[ModuleTest])
+async def list_module_tests(skill: str | None = None, task_type: str | None = None, level: str | None = None) -> list[ModuleTest]:
+    query: dict[str, Any] = {}
+    if skill in {"Speaking", "Writing", "Reading", "Listening"}:
+        query["skill"] = skill
+    if task_type:
+        query["task_type"] = task_type
+    if level in {"Easy", "Medium", "Hard"}:
+        query["level"] = level
+    docs = await db.module_tests.find(query).sort("created_at", -1).to_list(30)
+    return [_public_module_test(_normalise_datetime(doc)) for doc in docs]
+
+
 @router.post("/module-tests", response_model=ModuleTest)
 async def create_module_test(payload: ModuleTestCreate) -> ModuleTest:
     if not payload.create_new:
-        stored = await db.module_tests.find_one({"skill": payload.skill, "level": payload.level, "source_id": payload.source_id}, sort=[("created_at", -1)])
+        stored = await db.module_tests.find_one({"skill": payload.skill, "level": payload.level, "source_id": payload.source_id, "task_type": payload.task_type, "voice": payload.voice}, sort=[("created_at", -1)])
         if stored:
             return _public_module_test(_normalise_datetime(stored))
     source, saved_context = await _source_context(payload.source_id)
@@ -343,15 +412,20 @@ async def create_module_test(payload: ModuleTestCreate) -> ModuleTest:
         topic = source.topic if source else ["sustainable urban transport", "digital health access", "renewable energy training", "community science projects"][len(payload.skill) % 4]
         context = source.text_preview[:600] if source and source.text_preview else "The topic shows how evidence-based planning, accessible communication, and steady review can improve long-term outcomes."
     test_id = str(uuid4())
-    base_tasks = [item for item in RAW_TASKS if item["skill"] == payload.skill]
+    base_tasks = [item for item in RAW_TASKS if item["skill"] == payload.skill and (not payload.task_type or item["task_type"] == payload.task_type)]
+    if not base_tasks:
+        raise HTTPException(status_code=404, detail="Practice task type not found")
     questions: list[dict[str, Any]] = []
-    for index in range(20):
+    for index in range(payload.question_count):
         question, answer_key, explanation = _module_question(base_tasks[index % len(base_tasks)], payload.level, topic, context, index, test_id, source)
         question["order"] = index + 1
         question["answer_key"] = answer_key
         question["explanation"] = explanation
+        if question.get("skill") == "Listening" and not question.get("audio_url"):
+            question["audio_url"] = _listening_audio_url("module", test_id, question["id"], payload.voice)
         questions.append(question)
-    document = {"id": test_id, "title": f"{payload.skill} · 20-question {payload.level} test", "skill": payload.skill, "level": payload.level, "questions": questions, "total_time_seconds": sum(question["duration_seconds"] for question in questions), "topic": topic, "topic_source": topic_source, "source_id": payload.source_id, "created_at": datetime.now(timezone.utc)}
+    title_prefix = payload.task_type or payload.skill
+    document = {"id": test_id, "title": f"{title_prefix} · {payload.question_count}-question {payload.level} test", "skill": payload.skill, "level": payload.level, "questions": questions, "total_time_seconds": sum(question["duration_seconds"] for question in questions), "topic": topic, "topic_source": topic_source, "source_id": payload.source_id, "task_type": payload.task_type, "voice": payload.voice, "status": "ready", "created_at": datetime.now(timezone.utc)}
     await db.module_tests.insert_one(document)
     return _public_module_test(document)
 
@@ -384,6 +458,7 @@ async def submit_module_test(test_id: str, payload: ModuleTestSubmit) -> ModuleT
     total = len(doc["questions"])
     result = ModuleTestResult(test_id=test_id, title=doc["title"], skill=doc["skill"], correct_count=correct_count, wrong_count=total - correct_count - unanswered_count, unanswered_count=unanswered_count, total_count=total, estimated_score=round((correct_count / total) * 90), mistakes=mistakes)
     await db.module_test_results.insert_one(result.model_dump())
+    await db.module_tests.update_one({"id": test_id}, {"$set": {"status": "completed"}})
     return result
 
 
@@ -391,6 +466,67 @@ async def submit_module_test(test_id: str, payload: ModuleTestSubmit) -> ModuleT
 async def get_module_results() -> list[ModuleTestResult]:
     docs = await db.module_test_results.find().sort("created_at", -1).to_list(20)
     return [ModuleTestResult(**_normalise_datetime(doc)) for doc in docs]
+
+
+def _import_question(question: TestImportQuestion, skill: str, task_type: str | None, level: str, test_id: str, order: int, voice: str) -> dict[str, Any]:
+    raw = {
+        "id": f"{test_id}-{order}",
+        "title": question.title,
+        "task_type": task_type or question.title,
+        "skill": skill,
+        "section": "Imported practice",
+        "response_type": question.response_type,
+        "prompt": question.prompt,
+        "instructions": question.instructions,
+        "options": question.options,
+        "tags": ["Imported"],
+    }
+    data = _task(raw, level).model_dump(mode="json")
+    data["order"] = order
+    data["answer_key"] = question.answer_key
+    data["explanation"] = "Review the answer key supplied with this imported question."
+    if question.listening_script:
+        data["listening_script"] = question.listening_script
+        data["audio_url"] = _listening_audio_url("module", test_id, data["id"], voice)
+    return data
+
+
+@router.post("/test-bank/import")
+async def import_test(payload: TestImportCreate) -> dict[str, Any]:
+    test_id = str(uuid4())
+    skill = payload.skill or "Reading"
+    questions = [_import_question(question, skill, payload.task_type, payload.level, test_id, index + 1, payload.voice) for index, question in enumerate(payload.questions)]
+    if payload.test_kind == "task":
+        document = {"id": test_id, "title": payload.title, "skill": skill, "level": payload.level, "questions": questions, "total_time_seconds": sum(question["duration_seconds"] for question in questions), "topic": "Imported test", "topic_source": "curated", "task_type": payload.task_type, "voice": payload.voice, "status": "ready", "created_at": datetime.now(timezone.utc)}
+        await db.module_tests.insert_one(document)
+        return {"kind": "task", "test": _public_module_test(document).model_dump(mode="json")}
+    mock_questions = []
+    for question in questions:
+        public_question = {key: value for key, value in question.items() if key not in {"answer_key", "explanation"}}
+        public_question["correct_answer"] = question["answer_key"] or None
+        mock_questions.append(public_question)
+    mock = MockTest(id=test_id, title=payload.title, level=payload.level, questions=[MockQuestion(**question) for question in mock_questions], total_time_seconds=sum(question["duration_seconds"] for question in mock_questions), generated_by_ai=False, voice=payload.voice)
+    await db.mocks.insert_one(mock.model_dump())
+    return {"kind": "mock", "mock": mock.model_dump(mode="json")}
+
+
+@router.post("/test-bank/import-file")
+async def import_test_file(test_kind: str = Form(...), title: str = Form(...), skill: str = Form("Reading"), task_type: str = Form(""), level: str = Form("Medium"), voice: str = Form("australian"), file: UploadFile = File(...)) -> dict[str, Any]:
+    contents = (await file.read()).decode("utf-8", errors="ignore")
+    if Path(file.filename or "").suffix.lower() == ".json":
+        payload_data = json.loads(contents)
+        questions = payload_data.get("questions", payload_data if isinstance(payload_data, list) else [])
+    else:
+        questions = list(csv.DictReader(StringIO(contents)))
+    normalized = [TestImportQuestion(title=str(item.get("title") or task_type or "Imported question"), prompt=str(item.get("prompt") or ""), instructions=str(item.get("instructions") or "Answer the question."), response_type=str(item.get("response_type") or "text"), options=[part.strip() for part in str(item.get("options") or "").split("|") if part.strip()], answer_key=str(item.get("answer_key") or ""), listening_script=str(item.get("listening_script") or "") or None) for item in questions]
+    return await import_test(TestImportCreate(title=title, test_kind="mock" if test_kind == "mock" else "task", skill=skill if skill in {"Speaking", "Writing", "Reading", "Listening"} else "Reading", task_type=task_type or None, level=level if level in {"Easy", "Medium", "Hard"} else "Medium", voice=voice if voice in {"australian", "british"} else "australian", questions=normalized))
+
+
+@router.get("/mocks", response_model=list[MockTest])
+async def list_mocks(level: str | None = None) -> list[MockTest]:
+    query = {"level": level} if level in {"Easy", "Medium", "Hard"} else {}
+    docs = await db.mocks.find(query).sort("created_at", -1).to_list(30)
+    return [MockTest(**_normalise_datetime(doc)) for doc in docs]
 
 
 @router.post("/mocks", response_model=MockTest)
@@ -409,8 +545,13 @@ async def create_mock(payload: MockCreate) -> MockTest:
         data.update(generated)
         data["order"] = index
         data["correct_answer"] = None
+        if data.get("skill") == "Listening" and not data.get("audio_url"):
+            data["audio_url"] = _listening_audio_url("mock", "pending", data["id"], payload.voice)
         questions.append(MockQuestion(**data))
-    mock = MockTest(title=f"PTE Academic · {payload.level} mock", level=payload.level, questions=questions, total_time_seconds=sum(item.duration_seconds for item in questions), generated_by_ai=generated_by_ai)
+    mock = MockTest(title=f"PTE Academic · {payload.level} mock", level=payload.level, questions=questions, total_time_seconds=sum(item.duration_seconds for item in questions), generated_by_ai=generated_by_ai, voice=payload.voice)
+    for question in mock.questions:
+        if question.skill == "Listening" and question.audio_url and "pending" in question.audio_url:
+            question.audio_url = _listening_audio_url("mock", mock.id, question.id, payload.voice)
     await db.mocks.insert_one(mock.model_dump())
     return mock
 

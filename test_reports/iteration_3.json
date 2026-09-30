@@ -1,0 +1,60 @@
+{
+  "iteration": 3,
+  "summary": "5 acceptance criteria exercised via 6 artifacts (backend suite + 6 browser checks). All 6 checks passed, 0 failed/blocked/test_error.",
+  "passed": 6,
+  "failed": 0,
+  "bugs": [],
+  "action_items": [],
+  "retest_needed": false,
+  "checks": [
+    {
+      "criterion": "Active speaking recording stops on page change",
+      "name": "speaking-recording-stops-on-page-change",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Mocked getUserMedia/MediaRecorder with counters. Entered module-test-runner for a Speaking (Read Aloud) test, started a live recording via 'start-recording-button' (state=recording), then navigated to Dashboard via 'sidebar-overview-button' without stopping the recording first. window.__mic.recorderStops and .trackStops both increased on navigation (AudioRecorder's unmount cleanup called MediaRecorder.stop() and every stream track.stop())."
+    },
+    {
+      "criterion": "Device-check sample audio stops and is released on page change",
+      "name": "device-check-sample-releases-on-page-change",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "On device-check-page: completed one recording (creates a playback URL), started a SECOND recording and left it active, started the sound check and left it 'still playing' (oscillator onended never auto-fired), then navigated to Dashboard. window.__dc counters recorderStops, trackStops, contextCloses, and urlRevokes ALL increased on navigation, confirming DeviceCheck's unmount effect stops the recorder+mic tracks, closes the AudioContext, and revokes the recorded blob URL."
+    },
+    {
+      "criterion": "Listening audio stops on page change",
+      "name": "listening-audio-stops-on-page-change",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Opened the Listening module test, passed its (sound-only) device check, browsed to a question with a 'listening-audio-panel', clicked 'play-listening-audio-button' to start playback (audio element or speechSynthesis depending on question), then navigated to Dashboard via sidebar while it was still playing. Either HTMLMediaElement.pause() call count or speechSynthesis.cancel() call count increased strictly after navigation, confirming ListeningPlayer's unmount effect pauses audio and cancels speech synthesis."
+    },
+    {
+      "criterion": "Pre-test device check remains usable",
+      "name": "device-check-gates-speaking-test",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: navigating into a Speaking task test shows device-check-page before the runner; Continue stays disabled until BOTH a recorded microphone sample (with visible playback control 'device-check-recording-playback') and the sound check are completed, then unlocks and proceeds to module-test-runner."
+    },
+    {
+      "criterion": "Saved mock library and timing controls remain intact",
+      "name": "full-mock-navigation-shows-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: Full mock landing view renders the saved-mock library (previously a regression in iteration 1; now fixed and passing)."
+    },
+    {
+      "criterion": "Saved mock library and timing controls remain intact",
+      "name": "mock-timing-has-start-pause-controls",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: mock runner shows a ready screen with a Start control before any countdown begins, then Pause/Resume controls once running (screenshots: ready-screen-before-start, running-with-pause-control, paused, resumed). Previously a regression in iteration 1 (timer auto-started with no controls); now fixed and passing."
+    },
+    {
+      "criterion": "Regression safety net (backend)",
+      "name": "backend pytest suite",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "cd /app/backend && python -m pytest -q -p no:cacheprovider -> '3 passed in 12.24s' (test_tscheck_dashboard_data_driven.py, test_tscheck_generated_task_test_persists.py, test_tscheck_listening_audio_mpeg.py all green against the running server)."
+    }
+  ]
+}

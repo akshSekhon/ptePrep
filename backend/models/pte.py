@@ -9,6 +9,7 @@ Skill = Literal["Speaking", "Writing", "Reading", "Listening"]
 Difficulty = Literal["Easy", "Medium", "Hard"]
 ResponseType = Literal["text", "choice", "audio"]
 SourceKind = Literal["article", "image", "audio"]
+VoiceVariant = Literal["australian", "british"]
 
 
 class VisualData(BaseModel):
@@ -86,6 +87,7 @@ class DashboardSummary(BaseModel):
 
 class MockCreate(BaseModel):
     level: Difficulty = "Medium"
+    voice: VoiceVariant = "australian"
 
 
 class MockQuestion(PteTask):
@@ -101,6 +103,7 @@ class MockTest(BaseModel):
     total_time_seconds: int
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     generated_by_ai: bool = False
+    voice: VoiceVariant = "australian"
 
 
 class MockAnswer(BaseModel):
@@ -161,6 +164,9 @@ class ModuleTestCreate(BaseModel):
     level: Difficulty = "Medium"
     create_new: bool = False
     source_id: str | None = None
+    task_type: str | None = None
+    question_count: int = Field(default=20, ge=10, le=20)
+    voice: VoiceVariant = "australian"
 
 
 class ModuleQuestion(PteTask):
@@ -177,6 +183,9 @@ class ModuleTest(BaseModel):
     topic: str
     topic_source: Literal["grounded", "saved_source", "curated"]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    task_type: str | None = None
+    voice: VoiceVariant = "australian"
+    status: Literal["ready", "completed"] = "ready"
 
 
 class ModuleAnswer(BaseModel):
@@ -219,3 +228,23 @@ class TestSource(BaseModel):
     topic: str
     text_preview: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TestImportQuestion(BaseModel):
+    title: str
+    prompt: str
+    instructions: str
+    response_type: ResponseType = "text"
+    options: list[str] = Field(default_factory=list)
+    answer_key: str = ""
+    listening_script: str | None = None
+
+
+class TestImportCreate(BaseModel):
+    title: str
+    test_kind: Literal["task", "mock"]
+    skill: Skill | None = None
+    task_type: str | None = None
+    level: Difficulty = "Medium"
+    voice: VoiceVariant = "australian"
+    questions: list[TestImportQuestion] = Field(min_length=10, max_length=20)

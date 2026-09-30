@@ -1,5 +1,6 @@
 export type Skill = "Speaking" | "Writing" | "Reading" | "Listening";
 export type Difficulty = "Easy" | "Medium" | "Hard";
+export type VoiceVariant = "australian" | "british";
 
 export interface VisualData {
   type: "bar_chart" | "line_chart";
@@ -94,6 +95,7 @@ export interface MockTest {
   total_time_seconds: number;
   created_at: string;
   generated_by_ai: boolean;
+  voice: VoiceVariant;
 }
 
 export interface MockAnswer {
@@ -143,6 +145,9 @@ export interface ModuleTestCreate {
   level: Difficulty;
   create_new: boolean;
   source_id?: string;
+  task_type?: string;
+  question_count: number;
+  voice: VoiceVariant;
 }
 
 export interface ModuleQuestion extends PteTask {
@@ -159,6 +164,9 @@ export interface ModuleTest {
   topic: string;
   topic_source: "grounded" | "saved_source" | "curated";
   created_at: string;
+  task_type: string | null;
+  voice: VoiceVariant;
+  status: "ready" | "completed";
 }
 
 export interface ModuleAnswer {
@@ -197,4 +205,24 @@ export interface TestSource {
   topic: string;
   text_preview: string;
   created_at: string;
+}
+
+export interface TestImportQuestion {
+  title: string;
+  prompt: string;
+  instructions: string;
+  response_type: "text" | "choice" | "audio";
+  options: string[];
+  answer_key: string;
+  listening_script?: string;
+}
+
+export interface TestImportCreate {
+  title: string;
+  test_kind: "task" | "mock";
+  skill?: Skill;
+  task_type?: string;
+  level: Difficulty;
+  voice: VoiceVariant;
+  questions: TestImportQuestion[];
 }

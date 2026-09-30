@@ -1,0 +1,80 @@
+{
+  "iteration": 1,
+  "summary": "8 acceptance criteria exercised (7 unique features; matrix had 7 items). 5 passed, 2 failed (real frontend bugs), 0 blocked/test_error.",
+  "passed": 6,
+  "failed": 2,
+  "bugs": [
+    {
+      "severity": "high",
+      "criterion": "Full mock navigation is reliable and exposes generated mocks",
+      "description": "MockLanding (Full mock nav) only shows a 'Generate new mock' action. It never fetches/displays the saved mocks list even though GET /api/pte/mocks returns saved mocks (confirmed via curl: seeded Easy mocks exist). Home.tsx has no useQuery for MockTest[] and no UI renders a mock library or lets the learner open a previously generated/saved mock.",
+      "evidence": "Browser check 'full-mock-navigation-shows-library' failed: no data-testid='mock-library' or any saved-mock list rendered on the Full mock landing view. Cross-check: `curl http://localhost:8001/api/pte/mocks` returns a populated array of saved mocks (backend healthy), proving this is a frontend-only gap, not a data problem."
+    },
+    {
+      "severity": "high",
+      "criterion": "Test timing has explicit controls",
+      "description": "MockRunner starts its countdown timer immediately via a useEffect/setInterval on mount with no Start button and no Pause/Resume controls anywhere in the UI. Timing begins the instant the learner navigates into the mock (from 50:00 already down to 49:55 within seconds of the runner mounting), directly contradicting the requirement that a test not begin timing on navigation and provide Start plus Pause/Resume controls.",
+      "evidence": "Browser check 'mock-timing-has-start-pause-controls' failed: getByTestId('mock-start-button') not found; screenshot shows countdown already running (49:55) immediately after the mock runner rendered, with only mock-countdown, mock-previous-button, mock-next-button and mock-exit-button present — no start/pause/resume affordance."
+    }
+  ],
+  "action_items": [],
+  "retest_needed": true,
+  "checks": [
+    {
+      "criterion": "Practice task card opens a saved test library rather than one standalone question",
+      "name": "practice-task-opens-test-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Clicking Read Aloud 'Practice now' opens data-testid=task-test-library with generator, import, guided-builder, and saved-tests sections instead of a single question."
+    },
+    {
+      "criterion": "Generated task tests persist",
+      "name": "generated-task-test-persists-in-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Generated a 10-question Read Aloud test via 'Generate test'; ModuleRunner opened, exited back to library, saved-task-tests count increased and remained after fully leaving and re-entering the library."
+    },
+    {
+      "criterion": "Generated task tests persist",
+      "name": "test_generated_read_aloud_test_persists_in_library",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "POST /api/pte/module-tests (skill=Speaking, task_type=Read Aloud, level=Easy, question_count=10) -> 200, 10 questions returned; subsequent GET /api/pte/module-tests?skill=Speaking&task_type=Read Aloud&level=Easy -> 200 includes the created test id; GET /api/pte/module-tests/{id} -> 200."
+    },
+    {
+      "criterion": "Microphone warning reflects actual permission failures only",
+      "name": "microphone-setup-failure-not-permission",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "With getUserMedia mocked to succeed but MediaRecorder construction throwing, UI showed 'your microphone is allowed, but this browser could not start a recording' and did NOT render the microphone-permission-help banner that claims permission is blocked."
+    },
+    {
+      "criterion": "Full mock navigation is reliable and exposes generated mocks",
+      "name": "full-mock-navigation-shows-library",
+      "lane": "browser",
+      "status": "failed",
+      "evidence": "See bugs[0]. No saved-mock library UI rendered on Full mock nav despite backend having saved mocks."
+    },
+    {
+      "criterion": "Test timing has explicit controls",
+      "name": "mock-timing-has-start-pause-controls",
+      "lane": "browser",
+      "status": "failed",
+      "evidence": "See bugs[1]. Countdown timer runs immediately on navigation into the mock runner; no Start/Pause/Resume controls exist."
+    },
+    {
+      "criterion": "Listening audio uses natural cached HD audio",
+      "name": "test_listening_module_test_audio_returns_mpeg",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "Created Listening module test; question.audio_url fetched via GET /api/pte/listening-audio/module/{test_id}/{question_id} -> 200, content-type audio/mpeg on first (generated) and second (cached) calls."
+    },
+    {
+      "criterion": "Dashboard progress is data-driven",
+      "name": "test_dashboard_reflects_new_attempt",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "GET /api/pte/dashboard before/after POST /api/pte/attempts: completed_tasks incremented by exactly 1 and skill_scores[skill] > 0 after the new attempt, proving values are computed from stored attempts, not fixed placeholders."
+    }
+  ]
+}
