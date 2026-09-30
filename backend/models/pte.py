@@ -40,6 +40,9 @@ class PteTask(BaseModel):
     listening_script: str | None = None
     audio_url: str | None = None
     source_topic: str | None = None
+    interaction_mode: Literal["read_record", "listen_record", "visual_record", "listen_respond", "written_respond", "select"] = "written_respond"
+    scoring_mode: Literal["content_traits", "exact_match", "partial_credit", "negative_selection"] = "content_traits"
+    scoring_traits: list[str] = Field(default_factory=list)
 
 
 class TraitScore(BaseModel):

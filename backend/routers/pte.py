@@ -86,6 +86,16 @@ def _task(raw: dict[str, Any], level: str = "Medium") -> PteTask:
     copy.setdefault("duration_seconds", 60 if copy["skill"] == "Speaking" else 180)
     if copy["skill"] == "Speaking":
         copy["response_type"] = "audio"
+        copy["interaction_mode"] = "read_record"
+        copy["scoring_mode"] = "content_traits"
+        copy["scoring_traits"] = ["Content", "Pronunciation", "Oral fluency"]
+    if copy["task_type"] in {"Repeat Sentence", "Retell Lecture", "Answer Short Question", "Summarize Group Discussion"}:
+        copy["listening_script"] = copy.get("listening_script", copy["prompt"])
+        copy["prompt"] = "Listen to the audio, then record your response. The transcript is optional after you respond."
+        copy["interaction_mode"] = "listen_record"
+    if copy["task_type"] == "Repeat Sentence":
+        copy["scoring_traits"] = ["Content", "Pronunciation", "Oral fluency"]
+        copy["scoring_mode"] = "partial_credit"
     if copy["task_type"] == "Describe Image":
         copy["visual"] = VisualData(
             title="Weekly study hours and practice-score trend",
@@ -96,9 +106,17 @@ def _task(raw: dict[str, Any], level: str = "Medium") -> PteTask:
             key_points=["The score rises steadily from 52 to 76.", "The biggest gain occurs between Week 3 and Week 4.", "Consistent study is associated with stronger later performance."],
         )
         copy["prompt"] = "Describe the chart. Cover the overall trend, a key comparison, and one conclusion based on the data."
+        copy["interaction_mode"] = "visual_record"
     if copy["skill"] == "Listening":
         copy["listening_script"] = copy.get("listening_script", copy["prompt"])
         copy["prompt"] = "Listen to the short information passage, then answer the question below."
+        copy["interaction_mode"] = "listen_respond"
+        copy["scoring_mode"] = "negative_selection" if "Multiple Answers" in copy["title"] or copy["task_type"] == "Highlight Incorrect Words" else ("exact_match" if copy["response_type"] == "choice" else "partial_credit")
+        copy["scoring_traits"] = ["Content", "Form", "Grammar", "Vocabulary", "Spelling"] if copy["task_type"] == "Summarize Spoken Text" else ["Accuracy"]
+    if copy["skill"] == "Reading":
+        copy["interaction_mode"] = "select" if copy["response_type"] == "choice" else "written_respond"
+        copy["scoring_mode"] = "negative_selection" if "Multiple Answers" in copy["title"] else ("exact_match" if copy["response_type"] == "choice" else "partial_credit")
+        copy["scoring_traits"] = ["Accuracy"]
     return PteTask(**copy)
 
 
@@ -255,6 +273,11 @@ def _module_question(base: dict[str, Any], level: str, topic: str, context: str,
         task["instructions"] = "Record your answer. Content is estimated from chart coverage; pronunciation and fluency are estimated from your transcribed recording and pace."
         answer_key = " ".join(visual.key_points)
         explanation = "A strong response mentions the title, start-to-end rise, an important comparison, and a conclusion rather than listing isolated numbers."
+    elif task.get("interaction_mode") == "listen_record":
+        task["prompt"] = "Listen once, then record your response. Do not read a transcript before responding."
+        task["instructions"] = "Use your own spoken response. Content is scored against the audio passage; pronunciation and fluency are estimated from your transcript and pace."
+        answer_key = str(task.get("listening_script", ""))
+        explanation = "A strong response accurately reproduces or retells the important words and ideas from the audio in a clear spoken response."
     elif task["skill"] == "Listening":
         audio_url = f"/api/pte/test-bank/sources/{source.id}/file" if source and source.kind == "audio" else None
         task["audio_url"] = audio_url
@@ -430,7 +453,7 @@ async def create_module_test(payload: ModuleTestCreate) -> ModuleTest:
         question["order"] = index + 1
         question["answer_key"] = answer_key
         question["explanation"] = explanation
-        if question.get("skill") == "Listening" and not question.get("audio_url"):
+        if question.get("listening_script") and not question.get("audio_url"):
             question["audio_url"] = _listening_audio_url("module", test_id, question["id"], payload.voice)
         questions.append(question)
     title_prefix = payload.task_type or payload.skill
@@ -562,12 +585,12 @@ async def create_mock(payload: MockCreate) -> MockTest:
         data.update(generated)
         data["order"] = index
         data["correct_answer"] = None
-        if data.get("skill") == "Listening" and not data.get("audio_url"):
+        if data.get("listening_script") and not data.get("audio_url"):
             data["audio_url"] = _listening_audio_url("mock", "pending", data["id"], payload.voice)
         questions.append(MockQuestion(**data))
     mock = MockTest(title=f"PTE Academic · {payload.level} mock", level=payload.level, questions=questions, total_time_seconds=sum(item.duration_seconds for item in questions), generated_by_ai=generated_by_ai, voice=payload.voice)
     for question in mock.questions:
-        if question.skill == "Listening" and question.audio_url and "pending" in question.audio_url:
+        if question.listening_script and question.audio_url and "pending" in question.audio_url:
             question.audio_url = _listening_audio_url("mock", mock.id, question.id, payload.voice)
     await db.mocks.insert_one(mock.model_dump())
     return mock

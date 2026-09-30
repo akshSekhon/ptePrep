@@ -30,6 +30,9 @@ export interface PteTask {
   listening_script: string | null;
   audio_url: string | null;
   source_topic: string | null;
+  interaction_mode: "read_record" | "listen_record" | "visual_record" | "listen_respond" | "written_respond" | "select";
+  scoring_mode: "content_traits" | "exact_match" | "partial_credit" | "negative_selection";
+  scoring_traits: string[];
 }
 
 export interface TraitScore {
