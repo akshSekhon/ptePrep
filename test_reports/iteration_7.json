@@ -1,0 +1,58 @@
+{
+  "iteration": 7,
+  "summary": "Retest of 4 acceptance criteria (speaking recorder explicit Start/Pause/Resume/Stop controls, explicit confirm-to-transcribe after Stop, empty-capture guidance, generated tests remaining visible beyond the old 30-row cap) via backend suite (4 files, all passing) + 5 browser checks (2 re-run by name, 1 re-run by name that now also validates the previously-reported 30-row cap fix, 1 newly authored for explicit controls). 4/5 checks passed; 1 browser check failed due to a confirmed frontend crash bug: AudioRecorder.tsx references `Button` (used for the 'Use recording & transcribe' confirmation button) without importing it, so the app crashes with 'Button is not defined' the instant a non-empty recording is stopped and the review panel tries to render — this blocks the entire 'stop then explicitly confirm to transcribe' flow.",
+  "passed": 4,
+  "failed": 1,
+  "bugs": [
+    {
+      "severity": "high",
+      "criterion": "Stopped speaking recording unlocks next only after explicit confirmation",
+      "description": "src/components/AudioRecorder.tsx uses `<Button ... data-testid=\"use-recording-button\">Use recording & transcribe</Button>` inside the post-Stop review panel (line 122) but only imports icons from lucide-react, `apiUpload`, and the `AudioTranscript` type — there is no import of a `Button` component anywhere in the file. React throws `ReferenceError: Button is not defined` the moment `previewUrl` becomes truthy (i.e. every time Stop is pressed on a recording that captured non-empty audio), which crashes the whole SPA render tree (Emergent runtime-error overlay shown to the user) instead of showing the recording playback and the 'Use recording & transcribe' button. No confirmation step, transcription, or answer population can ever be reached.",
+      "evidence": "Browser check 'speaking-recorder-produces-playable-audio' failed with pageerror console entry 'Button is not defined' and the app's own runtime-error overlay screenshot pointing at src/components/AudioRecorder.tsx:122:188. curl http://localhost:8001/api/health confirms backend is reachable/healthy (docs endpoint 200), and `grep -n \"^import\" src/components/AudioRecorder.tsx` shows no import of any `Button` symbol — isolating this as a frontend-only defect, not a backend/data issue."
+    }
+  ],
+  "action_items": [
+    {
+      "type": "bug_fix_needed",
+      "detail": "Import the Button component used for 'Use recording & transcribe' in src/components/AudioRecorder.tsx (e.g. `import { Button } from \"@/components/ui/button\"` or the project's equivalent path) so stopping a non-empty recording renders the review panel instead of crashing the app."
+    }
+  ],
+  "retest_needed": true,
+  "checks": [
+    {
+      "criterion": "Regression safety net (backend)",
+      "name": "backend pytest suite",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "cd /app/backend && python -m pytest -q -p no:cacheprovider -> '4 passed in 36.93s' (test_tscheck_dashboard_data_driven.py, test_tscheck_generated_task_test_persists.py, test_tscheck_listening_audio_mpeg.py, test_tscheck_multi_delete_task_tests.py all green against the running server)."
+    },
+    {
+      "criterion": "Speaking test recording has explicit controls",
+      "name": "speaking-recorder-explicit-controls",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "New check: idle state shows only 'Start recording' (no 'enable' wording); once recording, both 'Pause recording' and 'Stop recording' are visible simultaneously; pausing swaps the control to 'Resume recording' while Stop stays visible; resuming swaps it back to 'Pause recording'. Screenshots idle-start-only, recording-pause-and-stop-visible, paused-resume-visible confirm each labeled state."
+    },
+    {
+      "criterion": "Stopped speaking recording unlocks next only after explicit confirmation",
+      "name": "speaking-recorder-produces-playable-audio",
+      "lane": "browser",
+      "status": "failed",
+      "evidence": "Re-run persisted check failed: after Stop on a non-empty capture, the app crashes with pageerror 'Button is not defined' at AudioRecorder.tsx:122 instead of showing 'practice-recording-playback' and the 'Use recording & transcribe' button; see bugs[0] for full evidence (screenshot + import grep + healthy-backend curl)."
+    },
+    {
+      "criterion": "Empty capture guidance remains clear",
+      "name": "speaking-recorder-empty-capture-shows-error",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: stopping a zero-chunk capture (previewUrl never set, so the buggy Button branch is never reached) surfaces 'No audio was captured. Check that the correct microphone is selected...' guidance, module-answer-state stays 'No answer recorded yet', no playback panel renders, and /api/pte/transcribe is never called."
+    },
+    {
+      "criterion": "Generated tests remain visible and saved",
+      "name": "saved-task-tests-multi-delete",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: generated two fresh Read Aloud task tests (skill/task_type combo already >30 saved rows per seed facts), both newly created rows appeared in the 'Manage saved tests' delete panel after remount (previously reported as capped/hidden in iteration_6), were selectable via checkbox, showed 'Delete selected (2)', and both disappeared after deletion -- confirming the prior 30-row visibility cap bug from iteration_6 is fixed and new tests remain visible/selectable/deletable."
+    }
+  ]
+}

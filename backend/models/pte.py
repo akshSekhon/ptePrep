@@ -248,3 +248,7 @@ class TestImportCreate(BaseModel):
     level: Difficulty = "Medium"
     voice: VoiceVariant = "australian"
     questions: list[TestImportQuestion] = Field(min_length=10, max_length=20)
+
+
+class DeleteTests(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=50)

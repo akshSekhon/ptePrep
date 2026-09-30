@@ -1,0 +1,66 @@
+{
+  "iteration": 4,
+  "summary": "4 acceptance criteria exercised via 5 artifacts (1 re-run backend suite + 4 browser checks, 1 reused from iteration 3). 2 passed, 2 failed with a real, reproducible frontend bug (same root cause) in AudioRecorder.tsx; 1 flaky note on the reused cleanup check n/a. 0 blocked/test_error.",
+  "passed": 2,
+  "failed": 2,
+  "bugs": [
+    {
+      "severity": "critical",
+      "criterion": "In-test recorder produces playable captured audio",
+      "check": "speaking-recorder-produces-playable-audio",
+      "description": "Stopping a non-empty Speaking recording never shows the in-test playback control ('practice-recording-playback') and never sends the captured audio to /api/pte/transcribe. Root cause isolated in frontend/src/components/AudioRecorder.tsx: recorder.onstop starts with `if (!mountedRef.current) return;` (line 59), but `mountedRef` (useRef(true), line 17) is only ever set to `false` in the unmount cleanup effect (lines 26-32) and is NEVER set back to `true`. Under React.StrictMode (enabled in main.tsx), React's dev-mode mount→cleanup→remount dance runs that cleanup once synchronously right after the first mount, permanently flipping mountedRef.current to false for the life of the component instance — even though the component is still actually mounted and working (the elapsed-duration ticker, start/stop buttons, etc. all continue to function normally). Every subsequent recorder.onstop call therefore returns immediately, before the blob-from-chunks construction, the blob.size check, the transcription upload, or any onError call.",
+      "evidence": "Instrumented the page (console + network + Array.prototype.push + Blob constructor spies) around a start->wait-for-advancing-duration->stop flow with a MediaRecorder mock that emits a real non-empty chunk via ondataavailable before stop() is called. Confirmed: the chunk IS pushed into the component's chunks array before stop (BLOB PUSH size=16 arrLenBefore=0), recorder.stop() IS invoked and this.onstop() IS called (CALLING onstop for id=2 logged) -- yet no 'new Blob(chunksRef.current,...)' construction ever logs, no request to /api/pte/transcribe ever fires (network listener saw zero requests), and no toast/error appears at any point (screenshots immediately-after-stop and half-second-after-stop show plain idle UI with 'Enable microphone & record' and no playback element). The visible '1s captured' text is leftover from the elapsed ticker during recording, not evidence that onstop's own setElapsed ran. This is consistent with the mountedRef early-return theory and not with any transcription/network failure (ruling out a backend-side cause)."
+    },
+    {
+      "severity": "critical",
+      "criterion": "Empty capture reports a useful error",
+      "check": "speaking-recorder-empty-capture-shows-error",
+      "description": "Stopping a Speaking recording that captured zero audio chunks does NOT show the expected 'No audio was captured. Check that the correct microphone is selected...' message. Same root cause as above: the mountedRef guard in AudioRecorder.tsx's recorder.onstop (line 59) returns before the `if (!blob.size) { onError(...); return; }` check is ever reached, so the useful capture-failure message is never surfaced to the user; the UI silently reverts to the idle 'Record your response' state with no answer captured and no explanation.",
+      "evidence": "Same instrumentation as above with a MediaRecorder mock that never emits ondataavailable (0 chunks). After Stop: page.getByText(/No audio was captured.../i) never becomes visible (10s timeout, element not found); module-answer-state stays 'No answer recorded yet' (correct — nothing was wrongly submitted) but with no error message at all, and the /api/pte/transcribe endpoint was never called (transcribeCalled=false), confirming the code returns before either the error path or the upload path."
+    }
+  ],
+  "action_items": [
+    {
+      "type": "bug_fix_needed",
+      "detail": "In frontend/src/components/AudioRecorder.tsx, reset mountedRef.current = true at the top of startRecording (or on mount via a mount-effect), or restructure the mount/unmount tracking so React.StrictMode's dev-mode double-invoke of the unmount cleanup does not permanently disable the onstop handler. This currently makes EVERY speaking recording in this build produce no playback, no transcript, and no error message after Stop — a total break of the Speaking practice/test flow's core recording feature in the dev environment used for testing."
+    }
+  ],
+  "retest_needed": true,
+  "checks": [
+    {
+      "criterion": "In-test recorder visibly captures active speech recording",
+      "name": "speaking-recorder-elapsed-duration-advances",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Started a live Speaking recording via 'start-recording-button'; audio-recorder-title showed 'Recording response' and stayed there; audio-recorder-duration text advanced from the initial state to match /^[1-9]\\d*s recording$/ within 8s while stop-recording-button remained visible and start-recording-button stayed absent -- confirms the recorder visibly stays in an active recording state with an advancing elapsed counter until Stop is pressed."
+    },
+    {
+      "criterion": "In-test recorder produces playable captured audio",
+      "name": "speaking-recorder-produces-playable-audio",
+      "lane": "browser",
+      "status": "failed",
+      "evidence": "practice-recording-playback never became visible after stopping a non-empty capture, and /api/pte/transcribe was never called (transcribeCalled=false). See bugs[] for full root-cause evidence (frontend-only defect in AudioRecorder.tsx mountedRef handling, cross-checked via console/network instrumentation -- not a backend issue)."
+    },
+    {
+      "criterion": "Empty capture reports a useful error",
+      "name": "speaking-recorder-empty-capture-shows-error",
+      "lane": "browser",
+      "status": "failed",
+      "evidence": "The expected 'No audio was captured...' message never appeared after stopping a zero-chunk capture (10s timeout). No transcript was wrongly submitted (module-answer-state stayed 'No answer recorded yet'), but the required user-facing capture error is missing entirely. See bugs[] for root-cause evidence."
+    },
+    {
+      "criterion": "Recording cleanup still works on page change",
+      "name": "speaking-recording-stops-on-page-change",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check from iteration 3 (unmodified): starting a live speaking recording and navigating away via 'sidebar-overview-button' without stopping first still increases MediaRecorder.stop() and per-track stop() call counts strictly, confirming AudioRecorder's real unmount cleanup effect (distinct code path from the onstop mountedRef bug above) still runs correctly on an actual navigation-triggered unmount."
+    },
+    {
+      "criterion": "Regression safety net (backend)",
+      "name": "backend pytest suite",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "cd /app/backend && python -m pytest -q -p no:cacheprovider -> '3 passed in 21.68s' (test_tscheck_dashboard_data_driven.py, test_tscheck_generated_task_test_persists.py, test_tscheck_listening_audio_mpeg.py all green against the running server); re-run confirms no regression from prior iteration."
+    }
+  ]
+}

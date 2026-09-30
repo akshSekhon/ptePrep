@@ -1,0 +1,72 @@
+{
+  "iteration": 6,
+  "summary": "Retest of 4 acceptance criteria (mock exit destination, listening playback native progress/transcript, multi-delete of saved task tests, in-test recorder functionality) via backend suite (4 files) + 6 browser checks (3 re-run by name, 2 newly authored, 1 pre-existing partially reused). 5/6 checks passed; 1 browser check failed and is a confirmed backend bug (hardcoded 30-row cap on GET /pte/module-tests hides newly generated tests from every UI list once a task_type/skill combination accumulates more than 30 saved tests), isolated with a passing backend test proving the DELETE endpoint itself works correctly on tests fetched directly by id.",
+  "passed": 5,
+  "failed": 1,
+  "bugs": [
+    {
+      "severity": "medium",
+      "criterion": "Multiple saved task tests can be deleted",
+      "description": "GET /api/pte/module-tests hardcodes `.to_list(30)` in routers/pte.py (list_module_tests) with no pagination. Once a skill/task_type combination has accumulated more than 30 saved tests (true today for Speaking/Read Aloud: 35 documents in Mongo, confirmed via direct DB count), newly generated tests are silently excluded from every UI surface that uses this endpoint — the 'Saved tests' grid in TaskTestLibrary AND the 'Manage saved tests' delete panel. A learner who generates a new task test in this state can never select or delete it because it never renders in the list, even after remounting the library (forced navigate-away-and-back was tried and still returned exactly 30 rows).",
+      "evidence": "curl -s -X POST :8001/api/pte/module-tests (Read Aloud/Medium) -> 201-style 200 body with id dab8f457-4b8a-4577-987c-58b0110cbad1, created_at 2026-09-30T15:19:48Z. Immediately after: curl -s :8001/api/pte/module-tests?skill=Speaking&task_type=Read%20Aloud returns len=30, and the new id IS present in that 30 only because an older row rotated out by creation time — but direct Mongo count via motor for the same filter returns 35 total documents, i.e. 5 saved tests exist that the endpoint can never return. Browser check 'saved-task-tests-multi-delete' timed out waiting for the delete panel's row count to increase after two fresh generate calls, confirming the same cap blocks the UI. Backend test 'test_multi_delete_removes_two_task_tests' (test_tscheck_multi_delete_task_tests.py) passed, proving POST /module-tests/delete correctly deletes any test fetched by its own id — the deletion mechanism itself is not defective, only list visibility beyond the 30-row cap."
+    }
+  ],
+  "action_items": [
+    {
+      "type": "bug_fix_needed",
+      "detail": "Remove or raise the hardcoded to_list(30) limit in routers/pte.py list_module_tests (add real pagination or a much higher cap) so newly generated/imported task tests remain visible and deletable once a task_type/skill combination exceeds 30 saved tests."
+    }
+  ],
+  "retest_needed": true,
+  "checks": [
+    {
+      "criterion": "Regression safety net (backend)",
+      "name": "backend pytest suite",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "cd /app/backend && python -m pytest -q -p no:cacheprovider -> '4 passed in 36.91s' (test_tscheck_dashboard_data_driven.py, test_tscheck_generated_task_test_persists.py, test_tscheck_listening_audio_mpeg.py, test_tscheck_multi_delete_task_tests.py all green against the running server; API base probed healthy at :8001 beforehand)."
+    },
+    {
+      "criterion": "Multiple saved task tests can be deleted (API)",
+      "name": "test_tscheck_multi_delete_task_tests.py",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "POST /pte/module-tests twice (2 fixture tests) -> 200 each; POST /pte/module-tests/delete {ids:[id1,id2]} -> 200, deleted_count=2; subsequent GET /pte/module-tests/{id} for both ids -> 404. Confirms the delete-multiple mechanism itself works correctly at the API layer."
+    },
+    {
+      "criterion": "Multiple saved task tests can be deleted (UI)",
+      "name": "saved-task-tests-multi-delete",
+      "lane": "browser",
+      "status": "failed",
+      "evidence": "Generated two fresh Read Aloud task tests via the UI generator and re-entered the library (forcing a remount) after each; the 'Manage saved tests' delete panel's row count stayed at 30 instead of increasing, because GET /pte/module-tests is capped at 30 rows server-side (see bugs[0]). Selection/checkbox/'Delete selected (N)' UI itself was never reached because the newly created rows never render to select. See bug entry for curl/DB evidence."
+    },
+    {
+      "criterion": "Mock exit returns to its saved mock library",
+      "name": "mock-exit-returns-to-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: exiting from the pre-start mock ready screen ('mock-ready-exit-button') and exiting from an active running mock ('mock-exit-button') both land back on 'mock-library' (not dashboard); final URL stays at SPA root '/'."
+    },
+    {
+      "criterion": "Listening playback shows native progress and time",
+      "name": "listening-playback-shows-native-progress",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Newly authored check. Browsed a Listening module test to a question exposing 'listening-audio-progress-player' — confirmed it is a real <audio controls src=...> element (native browser progress/time UI), and that 'toggle-listening-transcript-button' reveals/hides 'listening-transcript' on demand (hidden by default)."
+    },
+    {
+      "criterion": "In-test recorder remains functional (non-empty capture)",
+      "name": "speaking-recorder-produces-playable-audio",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: stopping a non-empty Speaking recording shows 'practice-recording-playback' and fires a request to /api/pte/transcribe."
+    },
+    {
+      "criterion": "In-test recorder remains functional (empty capture guidance)",
+      "name": "speaking-recorder-empty-capture-shows-error",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: stopping a zero-chunk capture surfaces the 'No audio was captured...' guidance message and no transcript is submitted."
+    }
+  ]
+}

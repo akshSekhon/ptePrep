@@ -1,0 +1,46 @@
+{
+  "iteration": 8,
+  "summary": "Retest of 3 acceptance criteria (explicit-confirmation gate on stopped speaking recordings, explicit recorder controls + empty-capture guidance, saved tests staying visible beyond the 30-row cap) via backend suite (4 files, all passing, re-run unchanged) + 4 browser checks re-run by name. The prior iteration_7 high-severity crash bug ('Button is not defined' in AudioRecorder.tsx) is confirmed FIXED - the Button import is now present and the review panel renders correctly. Two of the re-run checks initially failed, but investigation showed both failures were in the TEST ARTIFACTS themselves, not the app: (1) speaking-recorder-produces-playable-audio never clicked the new 'Use recording & transcribe' button before asserting transcription happened - it predated the explicit-confirmation requirement; fixed to assert no-answer/no-transcribe-call immediately after Stop, then click the confirm button, then assert transcription completes. (2) saved-task-tests-multi-delete's final assertion compared against a stale cross-run baseline that accumulates residue from this same check's own prior executions (acceptable per fixture-discipline rules); fixed to compare self-relatively (total-2) within the same run. After these test-artifact fixes, all 4 browser checks and the full backend suite pass, confirming all 3 criteria are met.",
+  "passed": 5,
+  "failed": 0,
+  "bugs": [],
+  "action_items": [],
+  "retest_needed": false,
+  "checks": [
+    {
+      "criterion": "Regression safety net (backend)",
+      "name": "backend pytest suite",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "cd /app/backend && python -m pytest -q -p no:cacheprovider -> '4 passed in 36.98s' (test_tscheck_dashboard_data_driven.py, test_tscheck_generated_task_test_persists.py, test_tscheck_listening_audio_mpeg.py, test_tscheck_multi_delete_task_tests.py all green against the running server)."
+    },
+    {
+      "criterion": "Stopped speaking recording unlocks next after confirmation",
+      "name": "speaking-recorder-produces-playable-audio",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Fixed outdated test artifact (it never clicked the confirmation button) and re-ran: after Stop on a non-empty capture, playback + 'Use recording & transcribe' button render (previous iteration's Button-import crash confirmed fixed), module-answer-state stays 'No answer recorded yet' and transcribe API is NOT called until the button is explicitly clicked; after clicking, title returns to 'Record your response', module-answer-state shows 'words captured', and /api/pte/transcribe was called with a non-empty upload body."
+    },
+    {
+      "criterion": "Explicit recording controls and empty capture guidance remain correct",
+      "name": "speaking-recorder-explicit-controls",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: idle shows only 'Start recording'; recording shows both 'Pause recording' and 'Stop recording'; pausing swaps to 'Resume recording' while Stop stays visible; resuming swaps back to 'Pause recording'."
+    },
+    {
+      "criterion": "Explicit recording controls and empty capture guidance remain correct",
+      "name": "speaking-recorder-empty-capture-shows-error",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: stopping a zero-chunk capture shows 'No audio was captured...' guidance, module-answer-state stays 'No answer recorded yet', no playback panel renders, /api/pte/transcribe never called."
+    },
+    {
+      "criterion": "Saved tests stay visible beyond 30 rows",
+      "name": "saved-task-tests-multi-delete",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Fixed final assertion to be self-relative (was comparing against a stale cross-run baseline accumulating this check's own prior residue) and re-ran: two freshly generated Read Aloud task tests (existing saved rows already >30 per seed facts) appeared in the 'Manage saved tests' delete panel after remount, were selectable, showed 'Delete selected (2)', both disappeared after deletion, and the panel count dropped by exactly 2 relative to its pre-deletion count within this run."
+    }
+  ]
+}

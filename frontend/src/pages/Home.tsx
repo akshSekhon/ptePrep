@@ -174,7 +174,7 @@ export default function Home() {
   const tasks = tasksQuery.data ?? [];
   const openPractice = (task?: PteTask) => { setSubmittedAttempt(null); setSelectedTask(task ?? null); setAnswer(""); setSource("text"); setView("practice"); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const openModule = (skill: Skill) => { setModuleSkill(skill); setSelectedTask(null); setSubmittedAttempt(null); setView("module"); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const navigate = (next: View) => { setView(next); if (next !== "practice") { setSelectedTask(null); setSubmittedAttempt(null); } window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const navigate = (next: View) => { if (next === "overview" && view === "mock" && mock) { setMock(null); setMockResult(null); setView("mock"); window.scrollTo({ top: 0, behavior: "smooth" }); return; } setView(next); if (next !== "practice") { setSelectedTask(null); setSubmittedAttempt(null); } window.scrollTo({ top: 0, behavior: "smooth" }); };
   const submitAttempt = () => { if (!selectedTask || !answer.trim()) return; submitMutation.mutate({ task_id: selectedTask.id, answer_text: answer, difficulty: level, source, audio_duration_seconds: audioDuration }); };
   const startMock = (value?: unknown) => {
     setMockResult(null);

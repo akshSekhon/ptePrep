@@ -22,6 +22,7 @@ from models.pte import (
     AttemptCreate,
     AudioTranscript,
     DashboardSummary,
+    DeleteTests,
     MockAnswer,
     MockCreate,
     MockQuestion,
@@ -392,8 +393,16 @@ async def list_module_tests(skill: str | None = None, task_type: str | None = No
         query["task_type"] = task_type
     if level in {"Easy", "Medium", "Hard"}:
         query["level"] = level
-    docs = await db.module_tests.find(query).sort("created_at", -1).to_list(30)
+    docs = await db.module_tests.find(query).sort("created_at", -1).to_list(500)
     return [_public_module_test(_normalise_datetime(doc)) for doc in docs]
+
+
+@router.post("/module-tests/delete")
+async def delete_module_tests(payload: DeleteTests) -> dict[str, int]:
+    result = await db.module_tests.delete_many({"id": {"$in": payload.ids}})
+    await db.module_test_results.delete_many({"test_id": {"$in": payload.ids}})
+    await db.generated_audio.delete_many({"test_kind": "module", "test_id": {"$in": payload.ids}})
+    return {"deleted_count": result.deleted_count}
 
 
 @router.post("/module-tests", response_model=ModuleTest)
@@ -527,6 +536,14 @@ async def list_mocks(level: str | None = None) -> list[MockTest]:
     query = {"level": level} if level in {"Easy", "Medium", "Hard"} else {}
     docs = await db.mocks.find(query).sort("created_at", -1).to_list(30)
     return [MockTest(**_normalise_datetime(doc)) for doc in docs]
+
+
+@router.post("/mocks/delete")
+async def delete_mocks(payload: DeleteTests) -> dict[str, int]:
+    result = await db.mocks.delete_many({"id": {"$in": payload.ids}})
+    await db.mock_results.delete_many({"mock_id": {"$in": payload.ids}})
+    await db.generated_audio.delete_many({"test_kind": "mock", "test_id": {"$in": payload.ids}})
+    return {"deleted_count": result.deleted_count}
 
 
 @router.post("/mocks", response_model=MockTest)

@@ -1,0 +1,46 @@
+{
+  "iteration": 5,
+  "summary": "Retest of 4 acceptance criteria (recording playback/transcription, empty-capture error, mock exit destination, saved-mock timing controls) via backend suite + 5 browser checks (4 re-run by name, 1 newly authored for mock-exit). All 5 checks passed, 0 failed/blocked/test_error. The critical AudioRecorder.tsx mountedRef bug from iteration 4 is confirmed fixed.",
+  "passed": 5,
+  "failed": 0,
+  "bugs": [],
+  "action_items": [],
+  "retest_needed": false,
+  "checks": [
+    {
+      "criterion": "In-test recording creates playable audio and transcribes",
+      "name": "speaking-recorder-produces-playable-audio",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: stopping a non-empty Speaking recording now shows 'practice-recording-playback' and fires a request to /api/pte/transcribe. Screenshot playback-visible-after-stop confirms the playback control renders. Fixes the mountedRef early-return regression reported in iteration 4."
+    },
+    {
+      "criterion": "Empty in-test capture gives a clear error",
+      "name": "speaking-recorder-empty-capture-shows-error",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: stopping a zero-chunk capture now surfaces the 'No audio was captured...' guidance message and no transcript is submitted. Previously failed in iteration 4 due to the same mountedRef guard; now fixed."
+    },
+    {
+      "criterion": "Mock exit returns to saved mock library",
+      "name": "mock-exit-returns-to-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "New check. Started a saved mock from the library, then (1) clicked 'mock-ready-exit-button' on the pre-start ready screen -- landed back on 'mock-library' (not dashboard); (2) started the mock into the live runner ('mock-runner' visible with countdown/pause/exit controls), clicked 'mock-exit-button' -- landed back on 'mock-library' again, with the 'Full mock' nav tab still highlighted active and final URL staying at '/' (SPA route), confirming exit from an active mock returns to the saved mock library rather than the dashboard."
+    },
+    {
+      "criterion": "Saved mock timing controls remain available",
+      "name": "mock-timing-has-start-pause-controls",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check: opening a saved mock shows a ready screen with a Start control before any countdown begins, then Pause/Resume controls once running (screenshots: ready-screen-before-start, running-with-pause-control, paused, resumed)."
+    },
+    {
+      "criterion": "Regression safety net (backend)",
+      "name": "backend pytest suite",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "cd /app/backend && python -m pytest -q -p no:cacheprovider -> '3 passed in 19.31s' (test_tscheck_dashboard_data_driven.py, test_tscheck_generated_task_test_persists.py, test_tscheck_listening_audio_mpeg.py all green against the running server; API base probed healthy at :8001 beforehand)."
+    }
+  ]
+}
