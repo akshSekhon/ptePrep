@@ -1,14 +1,18 @@
+import asyncio
 import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 
 from emergentintegrations.llm.openai.speech_to_text import OpenAISpeechToText
-from lib.ai import generate_mock_prompts, review_answer
+from lib.ai import generate_grounded_topic, generate_mock_prompts, review_answer
 from lib.db import db
+from bson.binary import Binary
 from models.pte import (
     Attempt,
     AttemptCreate,
@@ -20,11 +24,18 @@ from models.pte import (
     MockResult,
     MockSubmit,
     MockTest,
+    Mistake,
+    ModuleTest,
+    ModuleTestCreate,
+    ModuleTestResult,
+    ModuleTestSubmit,
     PteTask,
     PricingPlan,
     StudyPlan,
     StudyPlanItem,
+    TestSource,
     TraitScore,
+    VisualData,
 )
 
 router = APIRouter(prefix="/pte", tags=["pte"])
@@ -66,6 +77,21 @@ def _task(raw: dict[str, Any], level: str = "Medium") -> PteTask:
     copy = dict(raw)
     copy["difficulty"] = level
     copy.setdefault("duration_seconds", 60 if copy["skill"] == "Speaking" else 180)
+    if copy["skill"] == "Speaking":
+        copy["response_type"] = "audio"
+    if copy["task_type"] == "Describe Image":
+        copy["visual"] = VisualData(
+            title="Weekly study hours and practice-score trend",
+            x_label="Week",
+            y_label="Estimated practice score",
+            labels=["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"],
+            values=[52, 58, 63, 71, 76],
+            key_points=["The score rises steadily from 52 to 76.", "The biggest gain occurs between Week 3 and Week 4.", "Consistent study is associated with stronger later performance."],
+        )
+        copy["prompt"] = "Describe the chart. Cover the overall trend, a key comparison, and one conclusion based on the data."
+    if copy["skill"] == "Listening":
+        copy["listening_script"] = copy.get("listening_script", copy["prompt"])
+        copy["prompt"] = "Listen to the short information passage, then answer the question below."
     return PteTask(**copy)
 
 
@@ -175,6 +201,196 @@ async def transcribe_audio(file: UploadFile = File(...)) -> AudioTranscript:
     finally:
         if temp_path:
             Path(temp_path).unlink(missing_ok=True)
+
+
+def _module_visual(topic: str, seed: int, image_url: str | None = None) -> VisualData:
+    values = [48 + ((seed * 3) % 7), 55 + ((seed * 5) % 8), 63 + ((seed * 2) % 7), 71 + ((seed * 4) % 8), 77 + (seed % 7)]
+    return VisualData(
+        title=f"Practice engagement and outcome trend: {topic}",
+        x_label="Study period",
+        y_label="Performance index",
+        labels=["Period 1", "Period 2", "Period 3", "Period 4", "Period 5"],
+        values=values,
+        key_points=[f"The measure increases overall from {values[0]} to {values[-1]}.", f"The largest rise is {max(values[index + 1] - values[index] for index in range(4))} points between adjacent periods.", "The later periods remain higher than the starting point."],
+        image_url=image_url,
+    )
+
+
+def _module_question(base: dict[str, Any], level: str, topic: str, context: str, index: int, test_id: str, source: TestSource | None) -> tuple[dict[str, Any], str, str]:
+    task = _task(base, level).model_dump(mode="json")
+    task["id"] = f"{test_id}-{index + 1}"
+    task["source_topic"] = topic
+    task["duration_seconds"] = max(task["duration_seconds"], 75)
+    task_type = task["task_type"]
+    answer_key = topic
+    explanation = "Review the task cue and connect your response to the main idea using your own words."
+
+    if task_type == "Describe Image":
+        image_url = f"/api/pte/test-bank/sources/{source.id}/file" if source and source.kind == "image" else None
+        visual = _module_visual(topic, index, image_url)
+        task["visual"] = visual.model_dump(mode="json")
+        task["prompt"] = "Describe the chart in a clear, connected response. State the overall trend, compare important values, and give a sensible conclusion."
+        task["instructions"] = "Record your answer. Content is estimated from chart coverage; pronunciation and fluency are estimated from your transcribed recording and pace."
+        answer_key = " ".join(visual.key_points)
+        explanation = "A strong response mentions the title, start-to-end rise, an important comparison, and a conclusion rather than listing isolated numbers."
+    elif task["skill"] == "Listening":
+        audio_url = f"/api/pte/test-bank/sources/{source.id}/file" if source and source.kind == "audio" else None
+        task["audio_url"] = audio_url
+        task["listening_script"] = f"This short report is about {topic}. {context} The key message is that careful planning, evidence, and regular review help people respond effectively."
+        task["prompt"] = "Listen to the information passage, then respond to the task. The transcript stays hidden until you choose to reveal it."
+        if task["response_type"] == "choice":
+            task["options"] = ["Careful planning and regular review support progress.", "Planning is unnecessary when information is available.", "Only speed matters in complex decisions.", "Evidence should be ignored after a first attempt."]
+            answer_key = task["options"][0]
+            explanation = "The passage emphasizes planning, evidence, and regular review."
+        else:
+            answer_key = "planning evidence regular review progress"
+            explanation = "Include the main message about planning, evidence, review, and progress."
+    elif task["response_type"] == "choice":
+        task["prompt"] = f"Using this context about {topic}: {context} Select the best answer."
+        task["options"] = [f"A balanced response to {topic} uses evidence and review.", f"{topic} should be handled without any planning.", "A single opinion is enough for every decision.", "Progress never needs to be checked."]
+        answer_key = task["options"][0]
+        explanation = "The best answer reflects the supplied context and a balanced evidence-based approach."
+    else:
+        task["prompt"] = f"Create an original response about {topic}. Use this context: {context}"
+        task["instructions"] = f"{task['instructions']} Use your own words and include a clear main point plus one relevant detail."
+        answer_key = f"{topic} {context}"
+        explanation = "A correct practice response uses the central topic and at least one relevant detail in a clear, original answer."
+    return task, answer_key, explanation
+
+
+def _is_correct(question: dict[str, Any], answer: str) -> bool:
+    submitted = answer.lower().strip()
+    if not submitted:
+        return False
+    answer_key = str(question.get("answer_key", "")).lower()
+    if question.get("response_type") == "choice":
+        return submitted == answer_key
+    ignored = {"the", "and", "that", "this", "with", "from", "about", "into", "your", "their", "they", "have", "will", "are", "for", "was", "were", "but", "one", "two"}
+    key_words = {word.strip(".,;:!?()") for word in answer_key.split() if len(word.strip(".,;:!?()")) > 3 and word not in ignored}
+    submitted_words = {word.strip(".,;:!?()") for word in submitted.split()}
+    matches = len(key_words & submitted_words)
+    return matches >= min(2, max(1, len(key_words) // 5)) and len(submitted_words) >= 4
+
+
+def _public_module_test(doc: dict[str, Any]) -> ModuleTest:
+    questions = []
+    for question in doc["questions"]:
+        public_question = {key: value for key, value in question.items() if key not in {"answer_key", "explanation"}}
+        questions.append(public_question)
+    return ModuleTest(**{**doc, "questions": questions})
+
+
+async def _source_context(source_id: str | None) -> tuple[TestSource | None, str]:
+    if not source_id:
+        return None, ""
+    doc = await db.test_sources.find_one({"id": source_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Saved source not found")
+    source = TestSource(**_normalise_datetime(doc))
+    return source, f"Use this saved source topic: {source.topic}. Source notes: {source.text_preview[:700]}"
+
+
+@router.post("/test-bank/sources", response_model=TestSource)
+async def upload_test_source(title: str = Form(...), topic: str = Form(...), file: UploadFile = File(...)) -> TestSource:
+    contents = await file.read()
+    if not contents or len(contents) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Source files must be between 1 byte and 8 MB")
+    mime_type = file.content_type or "application/octet-stream"
+    if mime_type.startswith("image/"):
+        kind = "image"
+    elif mime_type.startswith("audio/"):
+        kind = "audio"
+    elif mime_type.startswith("text/") or Path(file.filename or "").suffix.lower() in {".txt", ".md", ".csv"}:
+        kind = "article"
+    else:
+        raise HTTPException(status_code=400, detail="Upload a text, image, or audio source")
+    text_preview = contents.decode("utf-8", errors="ignore")[:2000] if kind == "article" else ""
+    source = TestSource(title=title.strip()[:120] or "Saved source", kind=kind, mime_type=mime_type, topic=topic.strip()[:180] or title.strip()[:180], text_preview=text_preview)
+    document = source.model_dump()
+    document["content"] = Binary(contents)
+    document["original_name"] = file.filename or "source"
+    await db.test_sources.insert_one(document)
+    return source
+
+
+@router.get("/test-bank/sources", response_model=list[TestSource])
+async def get_test_sources() -> list[TestSource]:
+    docs = await db.test_sources.find({}, {"content": 0}).sort("created_at", -1).to_list(30)
+    return [TestSource(**_normalise_datetime(doc)) for doc in docs]
+
+
+@router.get("/test-bank/sources/{source_id}/file")
+async def get_test_source_file(source_id: str) -> Response:
+    doc = await db.test_sources.find_one({"id": source_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Saved source not found")
+    return Response(content=bytes(doc["content"]), media_type=doc["mime_type"], headers={"Content-Disposition": f'inline; filename="{doc.get("original_name", "source")}"'})
+
+
+@router.post("/module-tests", response_model=ModuleTest)
+async def create_module_test(payload: ModuleTestCreate) -> ModuleTest:
+    if not payload.create_new:
+        stored = await db.module_tests.find_one({"skill": payload.skill, "level": payload.level, "source_id": payload.source_id}, sort=[("created_at", -1)])
+        if stored:
+            return _public_module_test(_normalise_datetime(stored))
+    source, saved_context = await _source_context(payload.source_id)
+    topic_source = "saved_source" if source else "grounded"
+    try:
+        generated = await asyncio.wait_for(generate_grounded_topic(payload.skill, payload.level, saved_context), timeout=12)
+        topic, context = generated["topic"], generated["context"]
+    except Exception:
+        topic_source = "saved_source" if source else "curated"
+        topic = source.topic if source else ["sustainable urban transport", "digital health access", "renewable energy training", "community science projects"][len(payload.skill) % 4]
+        context = source.text_preview[:600] if source and source.text_preview else "The topic shows how evidence-based planning, accessible communication, and steady review can improve long-term outcomes."
+    test_id = str(uuid4())
+    base_tasks = [item for item in RAW_TASKS if item["skill"] == payload.skill]
+    questions: list[dict[str, Any]] = []
+    for index in range(20):
+        question, answer_key, explanation = _module_question(base_tasks[index % len(base_tasks)], payload.level, topic, context, index, test_id, source)
+        question["order"] = index + 1
+        question["answer_key"] = answer_key
+        question["explanation"] = explanation
+        questions.append(question)
+    document = {"id": test_id, "title": f"{payload.skill} · 20-question {payload.level} test", "skill": payload.skill, "level": payload.level, "questions": questions, "total_time_seconds": sum(question["duration_seconds"] for question in questions), "topic": topic, "topic_source": topic_source, "source_id": payload.source_id, "created_at": datetime.now(timezone.utc)}
+    await db.module_tests.insert_one(document)
+    return _public_module_test(document)
+
+
+@router.get("/module-tests/{test_id}", response_model=ModuleTest)
+async def get_module_test(test_id: str) -> ModuleTest:
+    doc = await db.module_tests.find_one({"id": test_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Module test not found")
+    return _public_module_test(_normalise_datetime(doc))
+
+
+@router.post("/module-tests/{test_id}/submit", response_model=ModuleTestResult)
+async def submit_module_test(test_id: str, payload: ModuleTestSubmit) -> ModuleTestResult:
+    doc = await db.module_tests.find_one({"id": test_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Module test not found")
+    answer_map = {item.question_id: item.answer for item in payload.answers}
+    mistakes: list[Mistake] = []
+    correct_count = 0
+    unanswered_count = 0
+    for question in doc["questions"]:
+        answer = answer_map.get(question["id"], "").strip()
+        if not answer:
+            unanswered_count += 1
+        if _is_correct(question, answer):
+            correct_count += 1
+        else:
+            mistakes.append(Mistake(question_id=question["id"], task_title=question["title"], task_type=question["task_type"], learner_answer=answer or "No answer", correct_answer=question["answer_key"], explanation=question["explanation"]))
+    total = len(doc["questions"])
+    result = ModuleTestResult(test_id=test_id, title=doc["title"], skill=doc["skill"], correct_count=correct_count, wrong_count=total - correct_count - unanswered_count, unanswered_count=unanswered_count, total_count=total, estimated_score=round((correct_count / total) * 90), mistakes=mistakes)
+    await db.module_test_results.insert_one(result.model_dump())
+    return result
+
+
+@router.get("/module-results", response_model=list[ModuleTestResult])
+async def get_module_results() -> list[ModuleTestResult]:
+    docs = await db.module_test_results.find().sort("created_at", -1).to_list(20)
+    return [ModuleTestResult(**_normalise_datetime(doc)) for doc in docs]
 
 
 @router.post("/mocks", response_model=MockTest)

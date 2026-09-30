@@ -8,6 +8,18 @@ from pydantic import BaseModel, Field
 Skill = Literal["Speaking", "Writing", "Reading", "Listening"]
 Difficulty = Literal["Easy", "Medium", "Hard"]
 ResponseType = Literal["text", "choice", "audio"]
+SourceKind = Literal["article", "image", "audio"]
+
+
+class VisualData(BaseModel):
+    type: Literal["bar_chart", "line_chart"] = "bar_chart"
+    title: str
+    x_label: str
+    y_label: str
+    labels: list[str]
+    values: list[int]
+    key_points: list[str]
+    image_url: str | None = None
 
 
 class PteTask(BaseModel):
@@ -23,6 +35,10 @@ class PteTask(BaseModel):
     response_type: ResponseType = "text"
     options: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    visual: VisualData | None = None
+    listening_script: str | None = None
+    audio_url: str | None = None
+    source_topic: str | None = None
 
 
 class TraitScore(BaseModel):
@@ -138,3 +154,68 @@ class AudioTranscript(BaseModel):
     language: str
     duration_seconds: int | None = None
     provider: str
+
+
+class ModuleTestCreate(BaseModel):
+    skill: Skill
+    level: Difficulty = "Medium"
+    create_new: bool = False
+    source_id: str | None = None
+
+
+class ModuleQuestion(PteTask):
+    order: int
+
+
+class ModuleTest(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    title: str
+    skill: Skill
+    level: Difficulty
+    questions: list[ModuleQuestion]
+    total_time_seconds: int
+    topic: str
+    topic_source: Literal["grounded", "saved_source", "curated"]
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ModuleAnswer(BaseModel):
+    question_id: str
+    answer: str = ""
+
+
+class ModuleTestSubmit(BaseModel):
+    answers: list[ModuleAnswer]
+
+
+class Mistake(BaseModel):
+    question_id: str
+    task_title: str
+    task_type: str
+    learner_answer: str
+    correct_answer: str
+    explanation: str
+
+
+class ModuleTestResult(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    test_id: str
+    title: str
+    skill: Skill
+    correct_count: int
+    wrong_count: int
+    unanswered_count: int
+    total_count: int
+    estimated_score: int
+    mistakes: list[Mistake]
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TestSource(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    title: str
+    kind: SourceKind
+    mime_type: str
+    topic: str
+    text_preview: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
