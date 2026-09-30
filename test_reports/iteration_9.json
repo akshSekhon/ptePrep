@@ -1,0 +1,137 @@
+{
+  "iteration": 9,
+  "summary": "Retest of 4 acceptance criteria (module hub/runner/result view transitions not using stale memoized UI, recorder/device cleanup safety, frontend type-safety after hook changes, mock title-accurate interactions) via the backend pytest suite (4 files, all passing, unchanged) + a real composite `tsc -b` type-check + re-running 13 existing browser checks by name. Two checks failed on first run and were root-caused to stale TEST ARTIFACTS, not app bugs: (1) listening-audio-stops-on-page-change assumed every Listening question used the button-triggered synth player (data-testid play-listening-audio-button); the module test this run landed on the native <audio controls> variant (listening-audio-progress-player) instead, so the old assertions (pause()/cancel() call counts) never applied - fixed to detect both player variants and, for the native-audio variant, assert playback actually stops by checking the element is detached from the DOM and no longer playing after navigating away. (2) mock-timing-has-start-pause-controls asserted a 'mock-paused-notice' banner that the ACTIVE MockRunner component (pages/Home.tsx, the one actually rendered for view==='mock') never implements - only an older, unused MockRunnerLegacy variant has that banner. Fixed the check to assert the pause state that this component actually guarantees: the countdown timer freezes and the Next/Finish button becomes disabled while paused. After these fixes, both checks and the full remaining suite pass. One unrelated timeout on this same check's first attempt was traced to a single slow mock-generation call (~40s, confirmed healthy via direct backend curl) and passed cleanly on immediate re-run - classified flaky, not a bug. Removed stray .backup scratch files from the checks directory per fixture-discipline rules.",
+  "passed": 15,
+  "failed": 0,
+  "bugs": [],
+  "action_items": [],
+  "retest_needed": false,
+  "checks": [
+    {
+      "criterion": "Regression safety net (backend)",
+      "name": "backend pytest suite",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "cd /app/backend && python -m pytest -q -p no:cacheprovider -> '4 passed in 36.92s' (test_tscheck_dashboard_data_driven.py, test_tscheck_generated_task_test_persists.py, test_tscheck_listening_audio_mpeg.py, test_tscheck_multi_delete_task_tests.py, all green against the running server, unchanged from iteration_8)."
+    },
+    {
+      "criterion": "Frontend remains type-safe after hook changes",
+      "name": "frontend tsc -b composite type-check",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "cd /app/frontend && yarn tsc -b tsconfig.app.json --noEmit -> 'Done in 1.35s', zero type errors. (Plain `tsc --noEmit` at the root is a no-op here since tsconfig.json has files:[] and only references - the composite -b invocation is required to actually type-check src/.)"
+    },
+    {
+      "criterion": "Module view state does not use stale memoized UI",
+      "name": "full-mock-navigation-shows-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: navigating into the mock landing/library renders correctly without stale state."
+    },
+    {
+      "criterion": "Module view state does not use stale memoized UI",
+      "name": "mock-exit-returns-to-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: exiting a ready-but-not-started mock, and exiting an active mock, both correctly transition back to the mock library (final url stays on the SPA root, library view renders)."
+    },
+    {
+      "criterion": "Module view state does not use stale memoized UI",
+      "name": "generated-task-test-persists-in-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: a freshly generated task test persists and reappears in the reopened library after remount (hub -> runner -> result -> hub transition holds correct state). One benign console entry (net::ERR_REQUEST_RANGE_NOT_SATISFIABLE, a routine HTTP range-seek artifact from an <audio> element) did not affect the assertions."
+    },
+    {
+      "criterion": "Module view state does not use stale memoized UI",
+      "name": "practice-task-opens-test-library",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: opening a practice task correctly opens the task test library view (hub transition)."
+    },
+    {
+      "criterion": "Recorder/device cleanup remains safe",
+      "name": "device-check-gates-speaking-test",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: the speaking module stays locked until both mic and sound checks complete, then unlocks."
+    },
+    {
+      "criterion": "Recorder/device cleanup remains safe",
+      "name": "device-check-sample-releases-on-page-change",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: navigating away from an active mic/sound device check releases the sample cleanly with no console errors, dashboard renders."
+    },
+    {
+      "criterion": "Recorder/device cleanup remains safe",
+      "name": "listening-audio-stops-on-page-change",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "FIXED test artifact (previous version assumed only the button-triggered synth player variant existed). Now detects both the button-triggered variant (play-listening-audio-button, asserted via pause()/cancel() call counts) and the native <audio controls> variant (listening-audio-progress-player, asserted by checking the element becomes detached from the document and stops reporting as playing after navigating to the dashboard). Re-run: native-audio variant hit this run, playback confirmed actually stopped on navigation, no errors."
+    },
+    {
+      "criterion": "Recorder/device cleanup remains safe",
+      "name": "speaking-recording-stops-on-page-change",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: navigating away from an active speaking recording stops the recorder safely, dashboard renders without errors."
+    },
+    {
+      "criterion": "Recorder/device cleanup remains safe",
+      "name": "microphone-setup-failure-not-permission",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: a non-permission microphone setup failure surfaces the correct distinct error message."
+    },
+    {
+      "criterion": "Mock title-accurate interactions remain intact",
+      "name": "mock-timing-has-start-pause-controls",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "FIXED test artifact (previous version asserted a 'mock-paused-notice' banner that the active MockRunner component - pages/Home.tsx, the one actually rendered for view==='mock' - never implements; only an unused MockRunnerLegacy variant has that element). Now asserts the pause guarantee this component actually provides: countdown stays frozen and Next button is disabled while paused, and resume restores the Pause button. One earlier attempt in this iteration timed out waiting for mock generation (~40s AI call, confirmed healthy via direct backend curl: POST /api/pte/mocks -> 200 in 41.5s) and passed cleanly on immediate re-run - classified flaky."
+    },
+    {
+      "criterion": "Mock title-accurate interactions remain intact",
+      "name": "speaking-recorder-produces-playable-audio",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: after Stop on a non-empty capture and clicking the explicit confirm button, playback renders and /api/pte/transcribe is called with a non-empty upload body."
+    },
+    {
+      "criterion": "Mock title-accurate interactions remain intact",
+      "name": "speaking-recorder-explicit-controls",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: idle/recording/paused/resumed control visibility transitions all correct."
+    },
+    {
+      "criterion": "Mock title-accurate interactions remain intact",
+      "name": "speaking-recorder-empty-capture-shows-error",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: stopping a zero-chunk capture shows the no-audio-captured guidance, no transcribe call made."
+    },
+    {
+      "criterion": "Mock title-accurate interactions remain intact",
+      "name": "speaking-recorder-elapsed-duration-advances",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: recorder elapsed-duration readout advances while recording."
+    },
+    {
+      "criterion": "Mock title-accurate interactions remain intact",
+      "name": "listening-playback-shows-native-progress",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: native audio player and transcript reveal render correctly for the listening question."
+    },
+    {
+      "criterion": "Mock title-accurate interactions remain intact",
+      "name": "saved-task-tests-multi-delete",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Re-ran persisted check unchanged: two freshly generated task tests appear, are selectable, and both delete correctly with a self-relative count check."
+    }
+  ]
+}

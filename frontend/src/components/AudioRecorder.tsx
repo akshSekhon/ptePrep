@@ -26,6 +26,8 @@ export default function AudioRecorder({ onTranscript, onError, onPermissionChang
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [paused, setPaused] = useState(false);
 
+  // Refs and browser globals are stable; this lifecycle owns one recorder instance only.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     mountedRef.current = true;
     return () => {

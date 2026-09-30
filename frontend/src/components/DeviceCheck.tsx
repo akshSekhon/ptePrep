@@ -12,6 +12,8 @@ export default function DeviceCheck({ needsMicrophone, onReady }: { needsMicroph
   const [recordedUrl, setRecordedUrl] = useState("");
   const [micError, setMicError] = useState("");
   const [speakerTested, setSpeakerTested] = useState(false);
+  // Refs and browser globals are stable; cleanup must only run when this device screen unmounts.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (recorder.current?.state === "recording") recorder.current.stop(); stream.current?.getTracks().forEach((track) => track.stop()); if (audioContext.current) void audioContext.current.close(); if (playbackUrl.current) URL.revokeObjectURL(playbackUrl.current); }, []);
   const startMic = async () => {
     try {

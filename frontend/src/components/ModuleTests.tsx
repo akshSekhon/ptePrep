@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { BarChart3, Check, ChevronLeft, ChevronRight, FileUp, Headphones, LoaderCircle, Mic2, Play, Sparkles, Volume2 } from "lucide-react";
@@ -23,6 +23,8 @@ function ListeningPlayerLegacy({ script, audioUrl }: { script: string; audioUrl:
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // The ref and browser speech API are stable; cleanup is intentionally unmount-only.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => { audioRef.current?.pause(); audioRef.current = null; window.speechSynthesis?.cancel(); }, []);
   const play = () => {
     setPlaying(true);
@@ -97,6 +99,7 @@ function ModuleResultView({ result, onBack }: { result: ModuleTestResult; onBack
 export default function ModuleTests({ skill, level, setLevel, onBack }: { skill: Skill; level: Difficulty; setLevel: (level: Difficulty) => void; onBack: () => void }) {
   const [test, setTest] = useState<ModuleTest | null>(null);
   const [result, setResult] = useState<ModuleTestResult | null>(null);
-  const body = useMemo(() => result ? <ModuleResultView result={result} onBack={() => { setResult(null); setTest(null); }} /> : test ? <ModuleRunner test={test} onDone={setResult} onExit={() => setTest(null)} /> : <ModuleHub skill={skill} level={level} setLevel={setLevel} onOpenTest={setTest} onBack={onBack} />, [level, result, skill, test, setLevel, onBack]);
-  return body;
+  if (result) return <ModuleResultView result={result} onBack={() => { setResult(null); setTest(null); }} />;
+  if (test) return <ModuleRunner test={test} onDone={setResult} onExit={() => setTest(null)} />;
+  return <ModuleHub skill={skill} level={level} setLevel={setLevel} onOpenTest={setTest} onBack={onBack} />;
 }

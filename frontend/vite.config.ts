@@ -21,8 +21,7 @@ async function loadEmergentOverlay() {
   try {
     const mod = await import("@emergentbase/overlay/vite");
     return mod.emergentOverlay();
-  } catch (e) {
-    console.warn("[emergent-overlay] plugin failed to load; using Vite's overlay instead:", e instanceof Error ? e.message : e);
+  } catch {
     return null;
   }
 }
